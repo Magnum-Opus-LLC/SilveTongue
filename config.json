@@ -1,5 +1,5 @@
 {
     "apiHost": "http://192.168.1.201:8355",
     "apiKey": "EMPTY",
-    "model": "gpt-3.5-turbo"
+    "model": "local-model"
 }
