@@ -38,6 +38,28 @@ class LingkuiConscious:
         
         return prompt
 
+    def identify_research_needs(self, user_input, conscious_prompt):
+        """
+        Determines if external research is needed and returns a search query if so.
+        """
+        research_check_prompt = (
+            f"{conscious_prompt}\n\n"
+            "Does this request require external information that is not present in your current knowledge or context? "
+            "If yes, provide a specific search query. If no, return 'NO_RESEARCH'.\n"
+            "Return ONLY the search query or 'NO_RESEARCH'."
+        )
+        
+        messages = [
+            {"role": "system", "content": research_check_prompt},
+            {"role": "user", "content": f"Request: {user_input}"}
+        ]
+        
+        response = get_chat_completion(messages, temperature=0.1).strip()
+        
+        if "NO_RESEARCH" in response.upper():
+            return None
+        return response
+
     def perform_task_planning(self, user_input, conscious_prompt):
         """
         Uses the conscious prompt to perform task planning or abstraction.

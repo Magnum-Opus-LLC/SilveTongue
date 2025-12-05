@@ -7,3 +7,6 @@ dependencies:
     - pip:
         - openai
         - pyyaml
+        - duckduckgo-search
+        - beautifulsoup4
+        - requests

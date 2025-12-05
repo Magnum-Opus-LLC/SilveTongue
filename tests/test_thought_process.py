@@ -57,6 +57,18 @@ class TestThoughtProcess(unittest.TestCase):
         self.assertIn("Know B", prompt)
 
     @patch('conscious.get_chat_completion')
+    def test_identify_research_needs(self, mock_chat):
+        # Test case where research is needed
+        mock_chat.return_value = "python unit testing"
+        query = self.conscious.identify_research_needs("input", "prompt")
+        self.assertEqual(query, "python unit testing")
+        
+        # Test case where no research is needed
+        mock_chat.return_value = "NO_RESEARCH"
+        query = self.conscious.identify_research_needs("input", "prompt")
+        self.assertIsNone(query)
+
+    @patch('conscious.get_chat_completion')
     def test_perform_task_planning(self, mock_chat):
         mock_chat.return_value = "Plan A"
         result = self.conscious.perform_task_planning("input", "prompt")
