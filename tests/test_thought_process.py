@@ -59,13 +59,20 @@ class TestThoughtProcess(unittest.TestCase):
     @patch('conscious.get_chat_completion')
     def test_identify_research_needs(self, mock_chat):
         # Test case where research is needed
-        mock_chat.return_value = "python unit testing"
-        query = self.conscious.identify_research_needs("input", "prompt")
+        mock_chat.return_value = '{"reasoning": "Need info", "search_query": "python unit testing"}'
+        reasoning, query = self.conscious.identify_research_needs("input", "prompt")
         self.assertEqual(query, "python unit testing")
+        self.assertEqual(reasoning, "Need info")
         
         # Test case where no research is needed
+        mock_chat.return_value = '{"reasoning": "I know this", "search_query": null}'
+        reasoning, query = self.conscious.identify_research_needs("input", "prompt")
+        self.assertIsNone(query)
+        self.assertEqual(reasoning, "I know this")
+        
+        # Test fallback
         mock_chat.return_value = "NO_RESEARCH"
-        query = self.conscious.identify_research_needs("input", "prompt")
+        reasoning, query = self.conscious.identify_research_needs("input", "prompt")
         self.assertIsNone(query)
 
     @patch('conscious.get_chat_completion')

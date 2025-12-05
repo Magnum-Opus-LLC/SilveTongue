@@ -21,16 +21,18 @@ class ThoughtProcessor:
         
         # 3. Research Check
         print("\n--- Research Check ---")
-        search_query = self.conscious.identify_research_needs(user_input, conscious_prompt)
+        reasoning, search_query = self.conscious.identify_research_needs(user_input, conscious_prompt)
+        print(f"Judgment: {reasoning}")
+        
         if search_query:
-            print(f"Research needed: {search_query}")
+            print(f"Decision: Research needed: {search_query}")
             research_results = researcher.conduct_research(search_query)
             print("Research completed.")
             
             # Append research findings to conscious prompt
             conscious_prompt += f"\n\nResearch Findings for '{search_query}':\n{research_results}\n"
         else:
-            print("No external research needed.")
+            print("Decision: No external research needed.")
         
         # 4. Save Prompt
         saved_path = self.conscious.save_conscious_prompt(conscious_prompt)

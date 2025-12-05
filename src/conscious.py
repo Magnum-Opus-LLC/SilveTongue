@@ -41,12 +41,21 @@ class LingkuiConscious:
     def identify_research_needs(self, user_input, conscious_prompt):
         """
         Determines if external research is needed and returns a search query if so.
+        Returns a tuple: (reasoning, search_query)
         """
         research_check_prompt = (
             f"{conscious_prompt}\n\n"
-            "Does this request require external information that is not present in your current knowledge or context? "
-            "If yes, provide a specific search query. If no, return 'NO_RESEARCH'.\n"
-            "Return ONLY the search query or 'NO_RESEARCH'."
+            "Task: Evaluate if external research is required for this request.\n"
+            "1. Reflect on the user's request based on your principles, expertise, and current context.\n"
+            "2. Determine if you have sufficient internal knowledge to provide a high-quality, accurate response.\n"
+            "3. If you need external info (e.g., current events, specific data, recent papers), formulate a specific search query.\n"
+            "4. If no research is needed, explain why your internal knowledge is sufficient.\n\n"
+            "Output Format (JSON):\n"
+            "{\n"
+            '  "reasoning": "Your internal thought process and judgment...",\n'
+            '  "search_query": "The query string" or null\n'
+            "}\n"
+            "Ensure the output is valid JSON."
         )
         
         messages = [
@@ -54,11 +63,25 @@ class LingkuiConscious:
             {"role": "user", "content": f"Request: {user_input}"}
         ]
         
-        response = get_chat_completion(messages, temperature=0.1).strip()
+        response_text = get_chat_completion(messages, temperature=0.2).strip()
         
-        if "NO_RESEARCH" in response.upper():
-            return None
-        return response
+        # Attempt to parse JSON
+        try:
+            # Clean up potential markdown code blocks
+            if response_text.startswith("```json"):
+                response_text = response_text.replace("```json", "").replace("```", "")
+            elif response_text.startswith("```"):
+                response_text = response_text.replace("```", "")
+                
+            data = json.loads(response_text)
+            reasoning = data.get("reasoning", "No reasoning provided.")
+            search_query = data.get("search_query")
+            return reasoning, search_query
+        except json.JSONDecodeError:
+            # Fallback for non-JSON response
+            if "NO_RESEARCH" in response_text.upper():
+                return response_text, None
+            return response_text, response_text  # Assume the whole text is the query/reasoning mixed
 
     def perform_task_planning(self, user_input, conscious_prompt):
         """
