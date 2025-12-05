@@ -27,10 +27,15 @@ class ThoughtProcessor:
         plan = self.conscious.perform_task_planning(user_input, conscious_prompt)
         print(f"Plan: {plan}")
         
+        # 5. Log Interaction
+        log_path = self.conscious.log_interaction(user_input, conscious_prompt, plan, analysis)
+        print(f"\nInteraction logged to: {log_path}")
+        
         return {
             "analysis": analysis,
             "conscious_prompt": conscious_prompt,
-            "plan": plan
+            "plan": plan,
+            "log_path": log_path
         }
 
 if __name__ == "__main__":

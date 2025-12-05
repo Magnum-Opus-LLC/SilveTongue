@@ -4,6 +4,7 @@ from pathlib import Path
 
 class KnowledgeBase:
     def __init__(self, actor_name='template'):
+        self.actor_name = actor_name
         self.project_root = Path(__file__).parent.parent
         self.actor_root = self.project_root / 'actors' / actor_name
         self.paths = {

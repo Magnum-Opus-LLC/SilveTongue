@@ -1,4 +1,6 @@
 import json
+import uuid
+from datetime import datetime
 from pathlib import Path
 from knowledge_base import kb
 from chat_utils import get_chat_completion
@@ -47,9 +49,40 @@ class LingkuiConscious:
         
         return get_chat_completion(messages, temperature=0.5)
 
+    def log_interaction(self, user_input, conscious_prompt, response, analysis):
+        """
+        Logs the entire interaction including prompt, query, response, and analysis.
+        """
+        interaction_id = str(uuid.uuid4())
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Directory: data/{actor_name}/{timestamp}_{uuid}/
+        actor_name = getattr(self.kb, 'actor_name', 'unknown_actor')
+        save_dir = self.kb.project_root / 'data' / actor_name / f"{timestamp}_{interaction_id}"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save Conscious Prompt
+        with open(save_dir / "conscious_system_prompt.txt", 'w') as f:
+            f.write(conscious_prompt)
+            
+        # Save User Query
+        with open(save_dir / "user_query.txt", 'w') as f:
+            f.write(user_input)
+            
+        # Save Response/Plan
+        with open(save_dir / "response.txt", 'w') as f:
+            f.write(str(response))
+            
+        # Save Subconscious Analysis
+        with open(save_dir / "subconscious_analysis.json", 'w') as f:
+            json.dump(analysis, f, indent=2)
+            
+        return str(save_dir)
+
     def save_conscious_prompt(self, prompt, filename="current_conscious_prompt.txt"):
         """
         Saves the conscious system prompt to a file.
+        (Kept for backward compatibility or quick debugging)
         """
         # Save to data/conscious_prompts/ (create if not exists)
         save_dir = self.kb.project_root / 'data' / 'conscious_prompts'

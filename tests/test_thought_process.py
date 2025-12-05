@@ -62,5 +62,26 @@ class TestThoughtProcess(unittest.TestCase):
         result = self.conscious.perform_task_planning("input", "prompt")
         self.assertEqual(result, "Plan A")
 
+    @patch('conscious.open')
+    @patch('conscious.Path.mkdir')
+    def test_log_interaction(self, mock_mkdir, mock_open):
+        self.mock_kb.project_root = Path("/test/root")
+        self.mock_kb.actor_name = "test_actor"
+        
+        # Mock open context manager
+        mock_file = MagicMock()
+        mock_open.return_value.__enter__.return_value = mock_file
+        
+        log_path = self.conscious.log_interaction(
+            "user input", 
+            "conscious prompt", 
+            "response", 
+            {"domain": "test"}
+        )
+        
+        self.assertIn("test_actor", log_path)
+        # Should open 4 files (prompt, query, response, analysis)
+        self.assertEqual(mock_open.call_count, 4)
+
 if __name__ == '__main__':
     unittest.main()
