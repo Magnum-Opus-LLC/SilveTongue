@@ -76,6 +76,24 @@ class TestThoughtProcess(unittest.TestCase):
         self.assertIsNone(query)
 
     @patch('conscious.get_chat_completion')
+    def test_evaluate_progress(self, mock_chat):
+        mock_chat.return_value = '{"thought": "Thinking...", "next_action": "RESEARCH", "args": "query"}'
+        result = self.conscious.evaluate_progress("input", [], "prompt")
+        self.assertEqual(result['next_action'], "RESEARCH")
+        self.assertEqual(result['args'], "query")
+
+    @patch('subconscious.get_chat_completion')
+    def test_validate_thought(self, mock_chat):
+        mock_chat.return_value = "VALID"
+        is_valid, feedback = self.subconscious.validate_thought("plan", "context")
+        self.assertTrue(is_valid)
+        
+        mock_chat.return_value = "INVALID: Unsafe"
+        is_valid, feedback = self.subconscious.validate_thought("plan", "context")
+        self.assertFalse(is_valid)
+        self.assertIn("Unsafe", feedback)
+
+    @patch('conscious.get_chat_completion')
     def test_perform_task_planning(self, mock_chat):
         mock_chat.return_value = "Plan A"
         result = self.conscious.perform_task_planning("input", "prompt")

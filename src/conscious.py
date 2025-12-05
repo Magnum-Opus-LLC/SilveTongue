@@ -83,6 +83,47 @@ class LingkuiConscious:
                 return response_text, None
             return response_text, response_text  # Assume the whole text is the query/reasoning mixed
 
+    def evaluate_progress(self, user_input, history, conscious_prompt):
+        """
+        Decides the next step in the thought process loop.
+        Returns a JSON object with 'thought', 'next_action', and 'args'.
+        """
+        planning_prompt = (
+            f"{conscious_prompt}\n\n"
+            "You are in a self-reflective thought loop. Review the current history of thoughts and actions.\n"
+            "Decide what to do next to best answer the user's request.\n\n"
+            "Possible Actions:\n"
+            "- RESEARCH: If you need more external information.\n"
+            "- DRAFT: If you have enough info to draft a solution/response.\n"
+            "- REVIEW: If you have a draft and need to critique/improve it.\n"
+            "- FINISH: If the current solution is complete and high-quality.\n\n"
+            "Output Format (JSON):\n"
+            "{\n"
+            '  "thought": "Your internal reasoning...",\n'
+            '  "next_action": "RESEARCH" | "DRAFT" | "REVIEW" | "FINISH",\n'
+            '  "args": "Search query, or draft content, or critique focus"\n'
+            "}\n"
+        )
+        
+        history_str = "\n".join([f"{h['step']}: {h['content']}" for h in history])
+        
+        messages = [
+            {"role": "system", "content": planning_prompt},
+            {"role": "user", "content": f"User Request: {user_input}\n\nHistory:\n{history_str}"}
+        ]
+        
+        response_text = get_chat_completion(messages, temperature=0.2).strip()
+        
+        try:
+            if response_text.startswith("```json"):
+                response_text = response_text.replace("```json", "").replace("```", "")
+            elif response_text.startswith("```"):
+                response_text = response_text.replace("```", "")
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            # Fallback
+            return {"thought": "Error parsing JSON", "next_action": "FINISH", "args": response_text}
+
     def perform_task_planning(self, user_input, conscious_prompt):
         """
         Uses the conscious prompt to perform task planning or abstraction.

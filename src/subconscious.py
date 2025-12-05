@@ -35,6 +35,36 @@ class LingkuiSubconscious:
         
         return prompt
 
+    def validate_thought(self, thought_plan, context):
+        """
+        Validates a proposed thought or plan against the agent's values and principles.
+        Returns a tuple: (is_valid, feedback)
+        """
+        subconscious_prompt = self.generate_subconscious_prompt()
+        
+        validation_prompt = (
+            "You are the Subconscious of Lingkui. Your role is to ensure all actions align with your core values and principles.\n"
+            "Review the proposed thought/plan below.\n"
+            "1. Does it violate any core values?\n"
+            "2. Is it consistent with your principles?\n"
+            "3. Is it safe and ethical?\n\n"
+            "If it is valid, return 'VALID'.\n"
+            "If it is invalid or needs adjustment, return 'INVALID: <reason>'.\n"
+            "Be strict but practical."
+        )
+        
+        messages = [
+            {"role": "system", "content": subconscious_prompt},
+            {"role": "user", "content": f"{validation_prompt}\n\nProposed Plan:\n{thought_plan}\n\nContext:\n{context}"}
+        ]
+        
+        response = get_chat_completion(messages, temperature=0.1).strip()
+        
+        if response.startswith("VALID"):
+            return True, "Proceed."
+        else:
+            return False, response
+
     def analyze_request(self, user_input):
         """
         Uses the subconscious prompt to classify and point to relevant experience and knowledge.
