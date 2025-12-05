@@ -3,16 +3,17 @@ from pathlib import Path
 
 
 class KnowledgeBase:
-    def __init__(self):
+    def __init__(self, actor_name='template'):
         self.project_root = Path(__file__).parent.parent
+        self.actor_root = self.project_root / 'actors' / actor_name
         self.paths = {
-            'principles': self.project_root / 'actor' / 'expertise' / 'domain' / 'principal' / 'principles.yaml',
-            'adjustments': self.project_root / 'actor' / 'expertise' / 'domain' / 'adjustment' / 'adjustments.yaml',
-            'core_knowledge': self.project_root / 'actor' / 'expertise' / 'domain' / 'knowledge' / 'core' / 'core_knowledge.yaml',
-            'supporting_knowledge': self.project_root / 'actor' / 'expertise' / 'domain' / 'knowledge' / 'supporting' / 'supporting_knowledge.yaml',
-            'experiences': self.project_root / 'actor' / 'expertise' / 'domain' / 'experience' / 'experiences.yaml',
-            'challenges': self.project_root / 'actor' / 'expertise' / 'domain' / 'challenge' / 'challenges.yaml',
-            'values': self.project_root / 'actor' / 'characteristic' / 'value' / 'values.yaml'
+            'principles': self.actor_root / 'expertise' / 'domain' / 'principal' / 'principles.yaml',
+            'adjustments': self.actor_root / 'expertise' / 'domain' / 'adjustment' / 'adjustments.yaml',
+            'core_knowledge': self.actor_root / 'expertise' / 'domain' / 'knowledge' / 'core' / 'core_knowledge.yaml',
+            'supporting_knowledge': self.actor_root / 'expertise' / 'domain' / 'knowledge' / 'supporting' / 'supporting_knowledge.yaml',
+            'experiences': self.actor_root / 'expertise' / 'domain' / 'experience' / 'experiences.yaml',
+            'challenges': self.actor_root / 'expertise' / 'domain' / 'challenge' / 'challenges.yaml',
+            'values': self.actor_root / 'characteristic' / 'value' / 'values.yaml'
         }
         self._cache = {}
 

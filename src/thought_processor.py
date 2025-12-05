@@ -1,11 +1,12 @@
 from subconscious import LingkuiSubconscious
 from conscious import LingkuiConscious
-from knowledge_base import kb
+from knowledge_base import KnowledgeBase
 
 class ThoughtProcessor:
-    def __init__(self):
-        self.subconscious = LingkuiSubconscious(kb)
-        self.conscious = LingkuiConscious(kb)
+    def __init__(self, actor_name='template'):
+        self.kb = KnowledgeBase(actor_name)
+        self.subconscious = LingkuiSubconscious(self.kb)
+        self.conscious = LingkuiConscious(self.kb)
 
     def process(self, user_input):
         # 1. Subconscious Analysis

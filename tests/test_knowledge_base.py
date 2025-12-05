@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).parent.parent / 'src'))
 
 class TestKnowledgeBase(unittest.TestCase):
     def setUp(self):
-        self.kb = KnowledgeBase()
+        self.kb = KnowledgeBase(actor_name='template')
 
     @patch('builtins.open', new_callable=mock_open, read_data="principles:\n  - Be kind\n")
     @patch('knowledge_base.Path.exists')
