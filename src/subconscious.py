@@ -18,6 +18,66 @@ class LingkuiSubconscious:
         values_str = "\n".join([f"- {v}" for v in values])
         return f"You are an agent defined by the following core values:\n{values_str}\n\nAct consistently with these values in all interactions."
 
+    def generate_subconscious_prompt(self):
+        """
+        Generates the subconscious system prompt from principles, knowledge, adjustments, and values.
+        """
+        values = self.kb.get_values()
+        principles = self.kb.get_principles()
+        adjustments = self.kb.get_adjustments()
+        core_knowledge = self.kb.get_core_knowledge()
+
+        prompt = "You are the Subconscious of Lingkui.\n\n"
+        prompt += "Values:\n" + "\n".join(f"- {v}" for v in values) + "\n\n"
+        prompt += "Principles:\n" + "\n".join(f"- {p}" for p in principles) + "\n\n"
+        prompt += "Adjustments:\n" + "\n".join(f"- {a}" for a in adjustments) + "\n\n"
+        prompt += "Core Knowledge:\n" + "\n".join(f"- {k}" for k in core_knowledge) + "\n\n"
+        
+        return prompt
+
+    def analyze_request(self, user_input):
+        """
+        Uses the subconscious prompt to classify and point to relevant experience and knowledge.
+        """
+        subconscious_prompt = self.generate_subconscious_prompt()
+        
+        experiences = self.kb.get_experiences()
+        experiences_str = "\n".join(f"{i}. {e}" for i, e in enumerate(experiences))
+        
+        supporting_kb = self.kb.get_supporting_knowledge()
+        supporting_kb_str = "\n".join(f"{i}. {k}" for i, k in enumerate(supporting_kb))
+
+        task_prompt = (
+            "Analyze the following user request.\n"
+            "1. Classify the domain.\n"
+            "2. Identify relevant experiences from the list below (return the text).\n"
+            "3. Identify relevant supporting knowledge from the list below (return the text).\n\n"
+            f"Available Experiences:\n{experiences_str}\n\n"
+            f"Available Supporting Knowledge:\n{supporting_kb_str}\n\n"
+            "Return ONLY valid JSON format: {\"domain\": \"...\", \"relevant_experiences\": [\"...\"], \"relevant_knowledge\": [\"...\"]}"
+        )
+
+        messages = [
+            {"role": "system", "content": subconscious_prompt},
+            {"role": "user", "content": f"{task_prompt}\n\nUser Request: {user_input}"}
+        ]
+
+        response_text = get_chat_completion(messages, temperature=0.1)
+        
+        # Basic cleanup to ensure JSON parsing if the model adds markdown blocks
+        clean_response = response_text.replace("```json", "").replace("```", "").strip()
+        
+        try:
+            return json.loads(clean_response)
+        except json.JSONDecodeError:
+            # Fallback or error handling
+            return {
+                "domain": "Unknown",
+                "relevant_experiences": [],
+                "relevant_knowledge": [],
+                "raw_response": response_text
+            }
+
     def classify_information(self, content):
         """
         Classifies the information into domains based on experience.
