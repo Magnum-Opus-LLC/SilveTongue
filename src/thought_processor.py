@@ -86,6 +86,10 @@ class ThoughtProcessor:
                 print(f"Unknown action: {action}")
                 break
                 
+        if not final_response:
+            print("Max iterations reached or no final response generated. Drafting quick summary...")
+            final_response = self.conscious.perform_task_planning(user_input, f"{conscious_prompt}\n\nHistory:\n{history}\n\nDraft a final response based on the available information.")
+
         # 4. Save Prompt (Snapshot of final state)
         saved_path = self.conscious.save_conscious_prompt(conscious_prompt)
         
