@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "schedule_id": "example_schedule",
+    "name": "Example Learning Schedule",
+    "description": "Template for creating a learning schedule",
+    "created_at": "2025-12-07T00:00:00",
+    "status": "template"
+  },
+  "source": {
+    "directory": "/path/to/papers",
+    "file_types": [".pdf", ".txt", ".md"],
+    "recursive": true
+  },
+  "study_config": {
+    "depth": "comprehensive",
+    "focus_areas": ["key concepts", "methodology", "findings", "applications"],
+    "extraction_targets": [
+      {
+        "type": "concept",
+        "description": "Core concepts and definitions"
+      },
+      {
+        "type": "method",
+        "description": "Methods, techniques, and approaches"
+      },
+      {
+        "type": "finding",
+        "description": "Key findings and results"
+      },
+      {
+        "type": "application",
+        "description": "Practical applications and use cases"
+      },
+      {
+        "type": "reference",
+        "description": "Important citations and related work"
+      }
+    ],
+    "max_knowledge_bits_per_paper": 20,
+    "generate_summary": true,
+    "generate_questions": true,
+    "analyze_enlightenment": true
+  },
+  "output": {
+    "notes_dir": "notes/example_schedule",
+    "knowledge_dir": "knowledge/example_schedule",
+    "format": "json"
+  },
+  "progress": {
+    "total_papers": 0,
+    "papers_processed": 0,
+    "papers_remaining": [],
+    "papers_completed": [],
+    "last_processed": null
+  }
+}
