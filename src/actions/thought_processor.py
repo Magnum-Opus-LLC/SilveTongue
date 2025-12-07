@@ -1,7 +1,7 @@
-from subconscious import LingkuiSubconscious
-from conscious import LingkuiConscious
-from knowledge_base import KnowledgeBase
-from research import researcher
+from src.thoughts.subconscious import LingkuiSubconscious
+from src.thoughts.conscious import LingkuiConscious
+from src.utils.knowledge_base import KnowledgeBase
+from src.utils.research import researcher
 
 class ThoughtProcessor:
     def __init__(self, actor_name='template'):
@@ -50,19 +50,25 @@ class ThoughtProcessor:
             # C. Execute Action
             result = None
             if action == "RESEARCH":
-                print(f"Executing Research: {args}")
-                result = researcher.conduct_research(args)
-                history.append({"step": "Research Results", "content": result})
-                
-            elif action == "DRAFT":
+                # Check if we've already done too much research
+                research_count = sum(1 for h in history if h['step'] == 'Research Results')
+                if research_count >= 2:
+                    print("Research limit reached. Forcing DRAFT.")
+                    action = "DRAFT"
+                else:
+                    print(f"Executing Research: {args}")
+                    result = researcher.conduct_research(args)
+                    history.append({"step": "Research Results", "content": result})
+                    continue  # Go to next iteration after research
+                    
+            if action == "DRAFT":
                 print("Drafting Response...")
-                # We can use perform_task_planning or a new method. Let's reuse perform_task_planning for now but context aware
-                # Actually, let's just ask the conscious mind to draft based on history
-                draft_prompt = f"{conscious_prompt}\n\nHistory:\n{history}\n\nDraft a response to: {user_input}"
-                # Simple call for now, ideally we'd have a specific draft method
+                # Build context from research results
+                research_content = "\n".join([h['content'] for h in history if h['step'] == 'Research Results'])
+                draft_prompt = f"{conscious_prompt}\n\nResearch Findings:\n{research_content}\n\nBased on the above research and your knowledge, draft a comprehensive response to: {user_input}"
                 result = self.conscious.perform_task_planning(user_input, draft_prompt)
                 history.append({"step": "Draft", "content": result})
-                final_response = result # Tentative final response
+                final_response = result
                 
             elif action == "REVIEW":
                 print("Reviewing Draft...")
@@ -97,6 +103,16 @@ class ThoughtProcessor:
         log_path = self.conscious.log_interaction(user_input, conscious_prompt, final_response, analysis)
         print(f"\nInteraction logged to: {log_path}")
         
+        # 6. Record Learning Event
+        insights = self._extract_insights(history, final_response)
+        self.kb.record_learning_event(
+            event_type="user_interaction",
+            description=f"Processed query about: {analysis.get('domain', 'General')}",
+            query=user_input,
+            insights=insights,
+            mindset_changes=[]
+        )
+        
         return {
             "analysis": analysis,
             "conscious_prompt": conscious_prompt,
@@ -104,6 +120,26 @@ class ThoughtProcessor:
             "log_path": log_path,
             "history": history
         }
+    
+    def _extract_insights(self, history, final_response):
+        """Extract key insights from the interaction history."""
+        insights = []
+        
+        # Extract from research results
+        for h in history:
+            if h['step'] == 'Research Results' and h['content']:
+                # Take first 100 chars as a summary
+                insights.append(f"Researched: {h['content'][:100]}...")
+        
+        # Note if drafting occurred
+        if any(h['step'] == 'Draft' for h in history):
+            insights.append("Generated comprehensive draft response")
+        
+        # Note if review occurred
+        if any(h['step'] == 'Review' for h in history):
+            insights.append("Self-reviewed and refined response")
+        
+        return insights[:5]  # Limit to 5 insights
 
 if __name__ == "__main__":
     processor = ThoughtProcessor()

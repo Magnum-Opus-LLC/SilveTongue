@@ -16,8 +16,7 @@ import json
 import yaml
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).parent))
-from chat_utils import get_chat_completion
+from src.utils.chat_utils import get_chat_completion
 
 
 GENERATION_SPEC = """

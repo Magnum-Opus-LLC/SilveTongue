@@ -1,6 +1,6 @@
 import json
-from knowledge_base import kb
-from chat_utils import get_chat_completion
+from src.utils.knowledge_base import kb
+from src.utils.chat_utils import get_chat_completion
 
 
 class LingkuiSubconscious:

@@ -4,7 +4,7 @@ from pathlib import Path
 # Add src to python path
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
 
-from thought_processor import ThoughtProcessor
+from actions.thought_processor import ThoughtProcessor
 
 def run_student_case_study():
     print("Initializing Student Actor...")

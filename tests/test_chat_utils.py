@@ -1,4 +1,3 @@
-from chat_utils import get_chat_completion, load_config
 import unittest
 from unittest.mock import patch, MagicMock
 import sys
@@ -7,6 +6,8 @@ from pathlib import Path
 
 # Add src to python path
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
+
+from utils.chat_utils import get_chat_completion, load_config
 
 
 class TestChatUtils(unittest.TestCase):
@@ -19,7 +20,7 @@ class TestChatUtils(unittest.TestCase):
         if 'apiKey' in config:
             self.assertIsInstance(config['apiKey'], str)
 
-    @patch('chat_utils.OpenAI')
+    @patch('utils.chat_utils.OpenAI')
     def test_get_chat_completion(self, mock_openai):
         # Get actual config to verify against
         config = load_config()
@@ -60,8 +61,8 @@ class TestChatUtils(unittest.TestCase):
             temperature=0.7
         )
 
-    @patch('chat_utils.load_config')
-    @patch('chat_utils.OpenAI')
+    @patch('utils.chat_utils.load_config')
+    @patch('utils.chat_utils.OpenAI')
     def test_get_chat_completion_no_v1_suffix(self, mock_openai, mock_load_config):
         # Test that /v1 is appended if missing
         mock_load_config.return_value = {
@@ -81,8 +82,8 @@ class TestChatUtils(unittest.TestCase):
             api_key="test-key"
         )
 
-    @patch('chat_utils.load_config')
-    @patch('chat_utils.OpenAI')
+    @patch('utils.chat_utils.load_config')
+    @patch('utils.chat_utils.OpenAI')
     def test_get_chat_completion_with_v1_suffix(self, mock_openai, mock_load_config):
         # Test that /v1 is NOT appended if already present
         mock_load_config.return_value = {

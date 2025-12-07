@@ -1,4 +1,3 @@
-from subconscious import LingkuiSubconscious
 import unittest
 from unittest.mock import patch, MagicMock
 import sys
@@ -6,6 +5,8 @@ from pathlib import Path
 
 # Add src to python path
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
+
+from thoughts.subconscious import LingkuiSubconscious
 
 
 class TestLingkuiSubconscious(unittest.TestCase):
@@ -21,7 +22,7 @@ class TestLingkuiSubconscious(unittest.TestCase):
         self.assertIn("Curiosity", prompt)
         self.assertIn("core values", prompt)
 
-    @patch('subconscious.get_chat_completion')
+    @patch('thoughts.subconscious.get_chat_completion')
     def test_classify_information(self, mock_chat):
         self.mock_kb.get_experiences.return_value = ["Experience 1"]
         mock_chat.return_value = "Chemistry"
@@ -44,8 +45,8 @@ class TestLingkuiSubconscious(unittest.TestCase):
         self.assertIn("Exp B", prompt)
         self.assertIn("Physics", prompt)
 
-    @patch('subconscious.get_chat_completion')
-    @patch('subconscious.LingkuiSubconscious.classify_information')
+    @patch('thoughts.subconscious.get_chat_completion')
+    @patch('thoughts.subconscious.LingkuiSubconscious.classify_information')
     def test_process_content(self, mock_classify, mock_chat):
         mock_classify.return_value = "Biology"
         mock_chat.return_value = "Analysis Result"

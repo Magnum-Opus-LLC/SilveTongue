@@ -5,12 +5,12 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
 
-from actor_generator import generate_actor_profile, save_actor_profile
+from utils.actor_generator import generate_actor_profile, save_actor_profile
 
 
 class TestActorGenerator(unittest.TestCase):
     
-    @patch('actor_generator.get_chat_completion')
+    @patch('utils.actor_generator.get_chat_completion')
     def test_generate_actor_profile_parses_yaml(self, mock_chat):
         mock_chat.return_value = """```yaml
 values:
@@ -37,7 +37,7 @@ challenges:
         self.assertEqual(len(profile["values"]), 2)
         self.assertEqual(profile["values"][0], "Value 1")
     
-    @patch('actor_generator.get_chat_completion')
+    @patch('utils.actor_generator.get_chat_completion')
     def test_generate_actor_profile_handles_no_code_blocks(self, mock_chat):
         mock_chat.return_value = """values:
   - "Direct YAML"

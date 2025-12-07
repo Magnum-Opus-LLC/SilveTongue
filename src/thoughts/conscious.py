@@ -2,8 +2,8 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from knowledge_base import kb
-from chat_utils import get_chat_completion
+from src.utils.knowledge_base import kb
+from src.utils.chat_utils import get_chat_completion
 
 class LingkuiConscious:
     def __init__(self, knowledge_base=None):
@@ -88,29 +88,35 @@ class LingkuiConscious:
         Decides the next step in the thought process loop.
         Returns a JSON object with 'thought', 'next_action', and 'args'.
         """
+        # Count how many research steps have been done
+        research_count = sum(1 for h in history if h['step'] == 'Research Results')
+        has_draft = any(h['step'] == 'Draft' for h in history)
+        
         planning_prompt = (
             f"{conscious_prompt}\n\n"
             "You are in a self-reflective thought loop. Review the current history of thoughts and actions.\n"
             "Decide what to do next to best answer the user's request.\n\n"
-            "Guidelines:\n"
-            "1. Avoid redundant research. If you have already researched a topic, do not research it again unless the previous results were empty or irrelevant.\n"
-            "2. If you have gathered sufficient information (even if not perfect), move to DRAFT.\n"
-            "3. If you have drafted a response, you MUST either REVIEW it or FINISH. Do not research again after drafting unless critical info is missing.\n"
-            "4. Be efficient. Aim to complete the task in as few steps as possible.\n\n"
+            f"STATUS: Research actions taken: {research_count}. Draft exists: {has_draft}.\n\n"
+            "STRICT RULES:\n"
+            "1. MAXIMUM 2 RESEARCH ACTIONS ALLOWED. If you have already done 2 research steps, you MUST move to DRAFT or FINISH.\n"
+            "2. If 'Research Results' exists in history with content, you have enough info to DRAFT. Do NOT research again.\n"
+            "3. After DRAFT, you can only REVIEW or FINISH. Never RESEARCH after drafting.\n"
+            "4. If a draft exists and is acceptable, choose FINISH.\n"
+            "5. Be decisive. If unsure, DRAFT with available information.\n\n"
             "Possible Actions:\n"
-            "- RESEARCH: If you need more external information AND haven't found it yet.\n"
-            "- DRAFT: If you have enough info to draft a solution/response.\n"
-            "- REVIEW: If you have a draft and need to critique/improve it.\n"
-            "- FINISH: If the current solution is complete and high-quality.\n\n"
-            "Output Format (JSON):\n"
+            "- RESEARCH: ONLY if research_count < 2 AND no research results exist yet.\n"
+            "- DRAFT: Write a comprehensive response using available information.\n"
+            "- REVIEW: Critique an existing draft (only if draft exists).\n"
+            "- FINISH: Complete the task (use if draft exists and is good).\n\n"
+            "Output ONLY valid JSON (no markdown, no explanation outside JSON):\n"
             "{\n"
             '  "thought": "Your internal reasoning...",\n'
             '  "next_action": "RESEARCH" | "DRAFT" | "REVIEW" | "FINISH",\n'
-            '  "args": "Search query, or draft content, or critique focus"\n'
+            '  "args": "Search query, or empty string for DRAFT/REVIEW/FINISH"\n'
             "}\n"
         )
         
-        history_str = "\n".join([f"{h['step']}: {h['content']}" for h in history])
+        history_str = "\n".join([f"{h['step']}: {h['content'][:500]}..." if len(str(h['content'])) > 500 else f"{h['step']}: {h['content']}" for h in history])
         
         messages = [
             {"role": "system", "content": planning_prompt},
@@ -120,14 +126,32 @@ class LingkuiConscious:
         response_text = get_chat_completion(messages, temperature=0.2).strip()
         
         try:
-            if response_text.startswith("```json"):
-                response_text = response_text.replace("```json", "").replace("```", "")
-            elif response_text.startswith("```"):
-                response_text = response_text.replace("```", "")
+            # Clean up potential markdown code blocks
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0]
+            
+            response_text = response_text.strip()
             return json.loads(response_text)
-        except json.JSONDecodeError:
-            # Fallback
-            return {"thought": "Error parsing JSON", "next_action": "FINISH", "args": response_text}
+        except (json.JSONDecodeError, IndexError):
+            # Try regex extraction as fallback
+            import re
+            thought_match = re.search(r'"thought"\s*:\s*"([^"]+)"', response_text)
+            action_match = re.search(r'"next_action"\s*:\s*"(RESEARCH|DRAFT|REVIEW|FINISH)"', response_text)
+            args_match = re.search(r'"args"\s*:\s*"([^"]+)"', response_text)
+            
+            if action_match:
+                return {
+                    "thought": thought_match.group(1) if thought_match else "Extracted from malformed JSON",
+                    "next_action": action_match.group(1),
+                    "args": args_match.group(1) if args_match else ""
+                }
+            
+            # Final fallback: if we have research results, draft; otherwise finish
+            if research_count > 0 or has_draft:
+                return {"thought": "JSON parsing failed, proceeding to draft", "next_action": "DRAFT", "args": ""}
+            return {"thought": "JSON parsing failed", "next_action": "FINISH", "args": response_text}
 
     def perform_task_planning(self, user_input, conscious_prompt):
         """

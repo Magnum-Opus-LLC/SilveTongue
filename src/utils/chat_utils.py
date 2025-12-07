@@ -6,9 +6,9 @@ from openai import OpenAI
 
 def load_config():
     """Load configuration from config.json in the project root."""
-    # Get the project root directory (assuming this file is in src/)
+    # Get the project root directory (this file is in src/utils/)
     current_dir = Path(__file__).parent
-    project_root = current_dir.parent
+    project_root = current_dir.parent.parent  # utils -> src -> project_root
     config_path = project_root / 'config.json'
 
     if not config_path.exists():

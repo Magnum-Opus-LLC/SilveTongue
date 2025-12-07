@@ -6,8 +6,8 @@ from pathlib import Path
 # Add src to python path
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
 
-from subconscious import LingkuiSubconscious
-from conscious import LingkuiConscious
+from thoughts.subconscious import LingkuiSubconscious
+from thoughts.conscious import LingkuiConscious
 
 class TestThoughtProcess(unittest.TestCase):
     def setUp(self):
@@ -28,7 +28,7 @@ class TestThoughtProcess(unittest.TestCase):
         self.assertIn("Adj1", prompt)
         self.assertIn("Core1", prompt)
 
-    @patch('subconscious.get_chat_completion')
+    @patch('thoughts.subconscious.get_chat_completion')
     def test_analyze_request(self, mock_chat):
         self.mock_kb.get_experiences.return_value = ["Exp1"]
         self.mock_kb.get_supporting_knowledge.return_value = ["Supp1"]
@@ -56,7 +56,7 @@ class TestThoughtProcess(unittest.TestCase):
         self.assertIn("Exp A", prompt)
         self.assertIn("Know B", prompt)
 
-    @patch('conscious.get_chat_completion')
+    @patch('thoughts.conscious.get_chat_completion')
     def test_identify_research_needs(self, mock_chat):
         # Test case where research is needed
         mock_chat.return_value = '{"reasoning": "Need info", "search_query": "python unit testing"}'
@@ -75,14 +75,14 @@ class TestThoughtProcess(unittest.TestCase):
         reasoning, query = self.conscious.identify_research_needs("input", "prompt")
         self.assertIsNone(query)
 
-    @patch('conscious.get_chat_completion')
+    @patch('thoughts.conscious.get_chat_completion')
     def test_evaluate_progress(self, mock_chat):
         mock_chat.return_value = '{"thought": "Thinking...", "next_action": "RESEARCH", "args": "query"}'
         result = self.conscious.evaluate_progress("input", [], "prompt")
         self.assertEqual(result['next_action'], "RESEARCH")
         self.assertEqual(result['args'], "query")
 
-    @patch('subconscious.get_chat_completion')
+    @patch('thoughts.subconscious.get_chat_completion')
     def test_validate_thought(self, mock_chat):
         mock_chat.return_value = "VALID"
         is_valid, feedback = self.subconscious.validate_thought("plan", "context")
@@ -93,14 +93,14 @@ class TestThoughtProcess(unittest.TestCase):
         self.assertFalse(is_valid)
         self.assertIn("Unsafe", feedback)
 
-    @patch('conscious.get_chat_completion')
+    @patch('thoughts.conscious.get_chat_completion')
     def test_perform_task_planning(self, mock_chat):
         mock_chat.return_value = "Plan A"
         result = self.conscious.perform_task_planning("input", "prompt")
         self.assertEqual(result, "Plan A")
 
-    @patch('conscious.open')
-    @patch('conscious.Path.mkdir')
+    @patch('thoughts.conscious.open')
+    @patch('thoughts.conscious.Path.mkdir')
     def test_log_interaction(self, mock_mkdir, mock_open):
         self.mock_kb.project_root = Path("/test/root")
         self.mock_kb.actor_name = "test_actor"
