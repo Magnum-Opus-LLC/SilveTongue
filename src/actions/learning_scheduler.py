@@ -561,6 +561,75 @@ class LearningScheduleRunner:
             print(f"Exported to: {output_path}")
         
         return content
+    
+    def discover_papers(self, query: str, depth: int = 2, 
+                        year_from: int = None, year_to: int = None,
+                        min_citations: int = None) -> List[Dict]:
+        """
+        Discover papers on a topic using Google Scholar.
+        
+        Args:
+            query: Search query
+            depth: Number of pages to search (10 results each)
+            year_from: Filter papers from this year
+            year_to: Filter papers up to this year
+            min_citations: Minimum citation count
+            
+        Returns:
+            List of discovered papers with metadata
+        """
+        from src.scholar_search import ScholarSearcher
+        
+        print(f"\n🔍 Discovering papers: {query}")
+        
+        searcher = ScholarSearcher()
+        papers = searcher.search_advanced(
+            query=query,
+            year_from=year_from,
+            year_to=year_to,
+            depth=depth
+        )
+        
+        # Filter by citations if specified
+        if min_citations:
+            papers = [p for p in papers if p.citation_count >= min_citations]
+        
+        print(f"   Found {len(papers)} papers")
+        
+        # Record the discovery
+        self.kb.record_learning_event(
+            event_type='paper_discovery',
+            description=f"Discovered {len(papers)} papers on: {query}",
+            insights=[
+                f"Top cited: {papers[0].title if papers else 'None'} ({papers[0].citation_count if papers else 0} citations)",
+                f"Year range: {year_from or 'any'}-{year_to or 'any'}",
+                f"Min citations filter: {min_citations or 'none'}"
+            ]
+        )
+        
+        return [p.to_dict() for p in papers]
+    
+    def get_research_survey(self, query: str, depth: int = 2) -> Dict:
+        """
+        Get a research survey for a topic using Google Scholar.
+        
+        Returns:
+            Survey with top papers, word analysis, and citation distribution
+        """
+        from src.scholar_search import ScholarSearcher
+        
+        print(f"\n📊 Research survey: {query}")
+        
+        searcher = ScholarSearcher()
+        survey = searcher.get_survey(query, depth=depth)
+        
+        # Convert papers to dicts
+        survey['top_papers'] = [p.to_dict() for p in survey.get('top_papers', [])]
+        
+        print(f"   Found {len(survey.get('top_papers', []))} top papers")
+        print(f"   Identified {len(survey.get('word_analysis', []))} key terms")
+        
+        return survey
 
 
 # Convenience function
@@ -575,3 +644,9 @@ def run_learning_schedule(actor_name: str, schedule_id: str, **kwargs) -> Dict:
     """Quick helper to run a learning schedule."""
     runner = LearningScheduleRunner(actor_name)
     return runner.run_schedule(schedule_id, **kwargs)
+
+
+def discover_papers(actor_name: str, query: str, **kwargs) -> List[Dict]:
+    """Quick helper to discover papers via Scholar search."""
+    runner = LearningScheduleRunner(actor_name)
+    return runner.discover_papers(query, **kwargs)
