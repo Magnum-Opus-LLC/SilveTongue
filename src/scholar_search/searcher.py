@@ -3,19 +3,19 @@ Scholar Searcher - Unified interface for Google Scholar searches
 
 Provides a high-level interface for Lingkui to search academic literature,
 analyze results, and integrate with the learning system.
+
+NOTE: Uses direct HTTP requests (no proxy required) to avoid rate limiting issues.
+For heavy usage, consider adding proxy support or using the async functions with valid proxy.
 """
 
-import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, asdict
+import re
 
-from src.scholar_search.parse_html import SearchResult
-from src.scholar_search.search_functions import search_scholar
-from src.scholar_search.survey import survey
-from src.scholar_search.scholar_caller import search_google_scholar
+from src.scholar_search.scholar_caller import search_google_scholar, parse_html
 from src.scholar_search.analyze_words import analyze_words
 
 
@@ -31,10 +31,9 @@ class ScholarPaper:
     source: str = ""
     
     @classmethod
-    def from_search_result(cls, result: SearchResult) -> 'ScholarPaper':
-        """Create ScholarPaper from SearchResult."""
-        # Parse publication info to extract authors, year, source
-        pub_info = result.publication_info
+    def from_dict(cls, data: Dict) -> 'ScholarPaper':
+        """Create ScholarPaper from dictionary (scholar_caller format)."""
+        pub_info = data.get('publication_info', '')
         authors = ""
         year = ""
         source = ""
@@ -45,16 +44,18 @@ class ScholarPaper:
                 authors = parts[0].strip()
             if len(parts) >= 2:
                 # Try to extract year from second part
-                import re
                 year_match = re.search(r'\b(19|20)\d{2}\b', parts[1])
                 if year_match:
                     year = year_match.group(0)
                 source = parts[1].strip()
         
+        citation = data.get('citation', '0')
+        citation_count = int(citation) if str(citation).isdigit() else 0
+        
         return cls(
-            title=result.title,
-            link=result.link,
-            citation_count=int(result.citation) if result.citation.isdigit() else 0,
+            title=data.get('title', ''),
+            link=data.get('link', ''),
+            citation_count=citation_count,
             publication_info=pub_info,
             authors=authors,
             year=year,
@@ -155,31 +156,39 @@ class ScholarSearcher:
         Returns:
             List of ScholarPaper objects
         """
-        # Run async search
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        # Build search query string with advanced options
+        search_query = query
         
-        results = loop.run_until_complete(
-            search_scholar(
-                depth=depth,
-                as_q=query,
-                as_epq=exact_phrase,
-                as_oq=any_words,
-                as_eq=exclude_words,
-                as_occt=where_words,
-                as_sauthors=author,
-                as_publication=publication,
-                as_ylo=year_from,
-                as_yhi=year_to,
-                as_sdt=0 if include_patents else 7,
-                as_vis=1 if include_citations else 0
-            )
+        if exact_phrase:
+            search_query += f' "{exact_phrase}"'
+        if any_words:
+            search_query += f' ({" OR ".join(any_words.split())})'
+        if exclude_words:
+            for word in exclude_words.split():
+                search_query += f' -{word}'
+        if author:
+            search_query += f' author:{author}'
+        
+        # Use synchronous search (no proxy needed)
+        results = search_google_scholar(
+            query=search_query.strip(),
+            pages=depth
         )
         
-        papers = [ScholarPaper.from_search_result(r) for r in results]
+        # Filter by year if specified
+        papers = [ScholarPaper.from_dict(r) for r in results]
+        
+        if year_from or year_to:
+            filtered = []
+            for p in papers:
+                if p.year and p.year.isdigit():
+                    year_int = int(p.year)
+                    if year_from and year_int < year_from:
+                        continue
+                    if year_to and year_int > year_to:
+                        continue
+                filtered.append(p)
+            papers = filtered
         
         # Record search
         self._record_search(query or exact_phrase or any_words, papers)
@@ -187,39 +196,6 @@ class ScholarSearcher:
         # Save if configured
         if self.save_results:
             self._save_results(query or "search", papers)
-        
-        return papers
-    
-    def search_simple(self, query: str, pages: int = 5, year_from: int = None) -> List[ScholarPaper]:
-        """
-        Simple synchronous search using scholar_caller (no proxy required).
-        
-        Args:
-            query: Search query
-            pages: Number of pages (10 results each)
-            year_from: Filter from year
-            
-        Returns:
-            List of ScholarPaper objects
-        """
-        results = search_google_scholar(query, pages=pages)
-        
-        papers = []
-        for r in results:
-            papers.append(ScholarPaper(
-                title=r['title'],
-                link=r['link'],
-                citation_count=int(r['citation']) if r['citation'].isdigit() else 0,
-                publication_info=r['publication_info'],
-                authors="",
-                year="",
-                source=""
-            ))
-        
-        # Record and optionally save
-        self._record_search(query, papers)
-        if self.save_results:
-            self._save_results(query, papers)
         
         return papers
     
@@ -243,35 +219,51 @@ class ScholarSearcher:
             year_to: End year filter
             
         Returns:
-            Dict with 'top_results', 'word_analysis', 'citation_histogram'
+            Dict with 'top_papers', 'word_analysis', 'citation_histogram'
         """
-        result = survey(
-            depth=depth,
-            as_q=query,
-            as_ylo=year_from,
-            as_yhi=year_to
-        )
+        # Use synchronous search
+        papers = self.search(query, depth=depth, year_from=year_from, year_to=year_to)
         
-        # Convert top results to ScholarPaper
-        papers = []
-        for r in result.get('top_results', []):
-            papers.append(ScholarPaper(
-                title=r.get('title', ''),
-                link=r.get('link', ''),
-                citation_count=int(r.get('citation', 0)) if str(r.get('citation', '0')).isdigit() else 0,
-                publication_info=r.get('publication_info', ''),
-                authors="",
-                year="",
-                source=""
-            ))
+        # Word analysis on titles
+        titles = [p.title for p in papers]
+        word_freq = analyze_words(titles)
+        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:20]
+        
+        # Citation histogram
+        citations = [p.citation_count for p in papers]
+        histogram = self._generate_histogram(citations)
         
         return {
-            'top_papers': papers,
-            'word_analysis': result.get('word_analysis', []),
-            'citation_histogram': result.get('citation_histogram', {}),
+            'top_papers': papers[:15],
+            'word_analysis': sorted_words,
+            'citation_histogram': histogram,
             'query': query,
             'searched_at': datetime.now().isoformat()
         }
+    
+    def _generate_histogram(self, citations: List[int]) -> Dict[str, float]:
+        """Generate citation histogram."""
+        if not citations:
+            return {}
+        
+        import math
+        min_val = min(citations)
+        max_val = max(citations)
+        n = len(citations)
+        
+        num_bins = max(round(math.sqrt(n)), 5)
+        bin_size = 1 if max_val == min_val else math.ceil((max_val - min_val) / num_bins)
+        
+        bins = {}
+        for citation in citations:
+            bin_index = (citation - min_val) // bin_size if bin_size > 0 else 0
+            bin_start = bin_index * bin_size + min_val
+            bin_end = (bin_index + 1) * bin_size + min_val - 1
+            bin_range = f"{bin_start}-{bin_end}"
+            bins[bin_range] = bins.get(bin_range, 0) + 1
+        
+        total = len(citations)
+        return {bin_range: (count / total) * 100 for bin_range, count in bins.items()}
     
     def analyze_titles(self, papers: List[ScholarPaper], top_n: int = 20) -> List[tuple]:
         """
