@@ -45,6 +45,7 @@ import uuid
 from src.utils.knowledge_base import KnowledgeBase
 from src.utils.chat_utils import get_chat_completion
 from src.utils.research import ResearchManager
+from src.utils.learning_session import LearningSessionManager
 from src.thoughts.conscious import LingkuiConscious
 from src.thoughts.subconscious import LingkuiSubconscious
 from src.actions.study_processor import StudyProcessor
@@ -418,6 +419,9 @@ class CognitiveLoop:
         self.scholar = ScholarSearcher()
         self.researcher = ResearchManager()
         
+        # Learning session manager for LoRA training data
+        self.session_manager = LearningSessionManager(actor_name)
+        
         # State
         self.state: Optional[CognitiveState] = None
         self.history: List[Dict] = []
@@ -430,7 +434,8 @@ class CognitiveLoop:
             'min_citations': 0,
             'year_from': None,
             'year_to': None,
-            'auto_save': True
+            'auto_save': True,
+            'save_session': True  # Save learning session for LoRA
         }
         
         # Paths
@@ -467,6 +472,15 @@ class CognitiveLoop:
         self._log(f"🧠 Starting Cognitive Loop: {topic}")
         self._log(f"   Goal: {goal}")
         self._log(f"   Loop ID: {self.state.loop_id}")
+        
+        # Start learning session for LoRA training data
+        if self.config.get('save_session', True):
+            self.session_manager.start_session(
+                topic=topic,
+                goal=goal,
+                session_id=self.state.loop_id
+            )
+            self._log(f"   📝 Learning session started for LoRA data")
         
         self._record_history("start", {"topic": topic, "goal": goal})
         
@@ -744,10 +758,14 @@ class CognitiveLoop:
             previous_searches=previous_searches
         )
         
-        response = self._llm_call(prompt)
+        response = self._llm_call(prompt, phase="search")
         strategy = self._parse_json(response)
         
         self._log(f"   Strategy: {strategy.get('reasoning', 'Generated queries')[:100]}...")
+        
+        # Store focus areas in session
+        if self.config.get('save_session', True) and self.session_manager.current_session:
+            self.session_manager.current_session.focus_areas = strategy.get('focus_areas', [])
         
         # Execute searches
         all_papers = []
@@ -755,6 +773,7 @@ class CognitiveLoop:
         
         for q in queries[:3]:  # Limit queries
             query_str = q.get('query', q) if isinstance(q, dict) else q
+            purpose = q.get('purpose', 'general search') if isinstance(q, dict) else 'general search'
             self.state.search_queries.append(query_str)
             
             self._log(f"   🔎 Query: {query_str}")
@@ -773,8 +792,12 @@ class CognitiveLoop:
                 
                 self._log(f"      Found {len(papers)} papers")
                 
-                for paper in papers[:self.config['max_papers_per_search']]:
-                    all_papers.append(paper.to_dict())
+                paper_dicts = [paper.to_dict() for paper in papers[:self.config['max_papers_per_search']]]
+                all_papers.extend(paper_dicts)
+                
+                # Record search in learning session
+                if self.config.get('save_session', True) and self.session_manager.current_session:
+                    self.session_manager.record_search(query_str, purpose, paper_dicts)
                     
             except Exception as e:
                 self._log(f"      ⚠️ Search error: {e}")
@@ -872,13 +895,32 @@ class CognitiveLoop:
             })
             
             # Collect knowledge bits and notes
-            self.state.knowledge_bits.extend(study_result.get('knowledge_bits', []))
+            knowledge_bits = study_result.get('knowledge_bits', [])
+            self.state.knowledge_bits.extend(knowledge_bits)
             
             if study_result.get('notes'):
                 self.state.study_notes.append(study_result['notes'])
             
             # Collect questions
             self.state.emerging_questions.extend(study_result.get('questions', []))
+            
+            # Record in learning session for LoRA
+            if self.config.get('save_session', True) and self.session_manager.current_session:
+                notes = study_result.get('notes', {})
+                self.session_manager.record_study_note(
+                    title=paper.get('title', 'Unknown'),
+                    url=paper.get('link', ''),
+                    source_type='paper',
+                    key_points=notes.get('key_concepts', []),
+                    summary=notes.get('summary', ''),
+                    questions=study_result.get('questions', []),
+                    relevance=0.7 if paper.get('citation_count', 0) > 50 else 0.5
+                )
+                
+                # Record each knowledge bit
+                for kb in knowledge_bits:
+                    kb['source'] = paper.get('title', 'Unknown')
+                    self.session_manager.record_knowledge_bit(kb)
         
         self.state.total_papers_studied += len(self.state.studied_papers)
         self.state.total_knowledge_bits += len(self.state.knowledge_bits)
@@ -993,7 +1035,7 @@ Return JSON:
             mindset=json.dumps(mindset, indent=2) if mindset else "Not yet defined"
         )
         
-        response = self._llm_call(prompt, temperature=0.4)
+        response = self._llm_call(prompt, temperature=0.8, phase="reflect")
         reflection = self._parse_json(response)
         
         # Store reflection results
@@ -1008,6 +1050,49 @@ Return JSON:
         self.state.expansions.extend(reflection.get('expansions', []))
         self.state.challenges.extend(reflection.get('challenges', []))
         self.state.revolutionary_ideas.extend(reflection.get('revolutionary', []))
+        
+        # Record insights in learning session for LoRA
+        if self.config.get('save_session', True) and self.session_manager.current_session:
+            for conf in reflection.get('confirmations', []):
+                self.session_manager.record_insight(
+                    insight_type='confirmation',
+                    content=conf.get('confirmed_belief', str(conf)),
+                    evidence=conf.get('supporting_evidence', []) if isinstance(conf, dict) else [],
+                    confidence=0.9
+                )
+            
+            for exp in reflection.get('expansions', []):
+                self.session_manager.record_insight(
+                    insight_type='expansion',
+                    content=exp.get('new_dimension', str(exp)),
+                    prior=exp.get('original_belief', '') if isinstance(exp, dict) else '',
+                    new_understanding=exp.get('expanded_understanding', '') if isinstance(exp, dict) else '',
+                    confidence=0.8
+                )
+            
+            for chal in reflection.get('challenges', []):
+                self.session_manager.record_insight(
+                    insight_type='challenge',
+                    content=chal.get('challenged_belief', str(chal)),
+                    evidence=chal.get('challenging_evidence', []) if isinstance(chal, dict) else [],
+                    prior=chal.get('challenged_belief', '') if isinstance(chal, dict) else '',
+                    new_understanding=chal.get('new_perspective', '') if isinstance(chal, dict) else '',
+                    confidence=0.85
+                )
+            
+            for rev in reflection.get('revolutionary', []):
+                self.session_manager.record_insight(
+                    insight_type='revolutionary',
+                    content=rev.get('paradigm_shift', str(rev)),
+                    implications=rev.get('implications', []) if isinstance(rev, dict) else [],
+                    confidence=0.75
+                )
+            
+            # Record synthesis
+            self.session_manager.record_synthesis(
+                self.state.synthesis,
+                self.state.conclusions
+            )
         
         # Log summary
         assessment = reflection.get('overall_assessment', 'unknown')
@@ -1125,6 +1210,16 @@ Return JSON:
             self._log(f"      Challenges: {persisted['challenges']}")
             self._log(f"      (Previous versions archived)")
         
+        # Record to learning session for LoRA
+        if self.config.get('save_session', True) and self.session_manager.current_session:
+            for update in mindset_updates:
+                self.session_manager.record_knowledge_update('mindset', update)
+            
+            for knowledge in updates.get('knowledge_to_add', []):
+                k_type = knowledge.get('type', 'experience')
+                content = knowledge.get('content', '')
+                self.session_manager.record_knowledge_update(k_type, content)
+        
         # Record learning event
         self.kb.record_learning_event(
             event_type='cognitive_loop_update',
@@ -1175,11 +1270,17 @@ Return JSON:
         
         # Store gaps and next queries
         for gap in expansion.get('knowledge_gaps', []):
-            self.state.knowledge_gaps.append(gap.get('gap', gap) if isinstance(gap, dict) else gap)
+            gap_text = gap.get('gap', gap) if isinstance(gap, dict) else gap
+            self.state.knowledge_gaps.append(gap_text)
         
         for query in expansion.get('next_queries', []):
             q = query.get('query', query) if isinstance(query, dict) else query
             self.state.next_search_queries.append(q)
+        
+        # Record in learning session
+        if self.config.get('save_session', True) and self.session_manager.current_session:
+            self.session_manager.current_session.emerging_questions = self.state.emerging_questions
+            self.session_manager.current_session.knowledge_gaps = self.state.knowledge_gaps
         
         self._record_history("expand", {
             "goal_progress": goal_progress,
@@ -1208,7 +1309,100 @@ Return JSON:
         else:
             self._log("\n   ✅ Learning goal achieved!")
             self.state.phase = LoopPhase.COMPLETE
+            
+            # Finalize learning session and save for LoRA
+            self._finalize_learning_session()
     
+    def _finalize_learning_session(self):
+        """Finalize the learning session and save all data for LoRA training."""
+        if not self.config.get('save_session', True):
+            return
+        
+        if not self.session_manager.current_session:
+            return
+        
+        session = self.session_manager.current_session
+        
+        # Update session with final state data
+        session.iterations = self.state.iteration
+        session.total_papers_studied = self.state.total_papers_studied
+        session.total_knowledge_bits = self.state.total_knowledge_bits
+        session.conclusions = self.state.conclusions
+        session.synthesis = self.state.synthesis
+        
+        # Generate Q&A pairs for training
+        qa_pairs = self.session_manager.generate_qa_pairs()
+        
+        # Add custom Q&A pairs based on learning outcomes
+        self._generate_custom_qa_pairs()
+        
+        # Finalize and save
+        tags = [
+            f"topic:{self.state.topic[:30]}",
+            f"iterations:{self.state.iteration}",
+            f"papers:{self.state.total_papers_studied}"
+        ]
+        
+        session_dir = self.session_manager.finalize_session(tags=tags)
+        
+        self._log(f"\n   📝 LEARNING SESSION SAVED FOR LORA:")
+        self._log(f"      Location: {session_dir}")
+        self._log(f"      Q&A pairs: {len(session.qa_pairs)}")
+        self._log(f"      Thought traces: {len(session.thought_traces)}")
+        self._log(f"      Study notes: {len(session.study_notes)}")
+        self._log(f"      Insights: {len(session.insights)}")
+    
+    def _generate_custom_qa_pairs(self):
+        """Generate additional Q&A pairs from the learning session."""
+        if not self.session_manager.current_session:
+            return
+        
+        session = self.session_manager.current_session
+        
+        # Q&A from each conclusion
+        for i, conclusion in enumerate(self.state.conclusions):
+            self.session_manager.add_qa_pair(
+                question=f"Based on your study of {self.state.topic}, what is conclusion #{i+1}?",
+                answer=conclusion,
+                context=f"Goal: {self.state.goal}",
+                category="synthesis",
+                confidence=0.85
+            )
+        
+        # Q&A from mindset updates (important for alignment)
+        for update in self.state.mindset_updates:
+            self.session_manager.add_qa_pair(
+                question=f"How has studying {self.state.topic} changed your thinking?",
+                answer=update,
+                category="conceptual",
+                confidence=0.9
+            )
+        
+        # Q&A from challenges (critical for alignment/correction)
+        for challenge in self.state.challenges:
+            old_belief = challenge.get('challenged_belief', '')
+            new_view = challenge.get('new_perspective', '')
+            evidence = challenge.get('challenging_evidence', '')
+            
+            if old_belief and new_view:
+                self.session_manager.add_qa_pair(
+                    question=f"What misconception about {self.state.topic} did you correct?",
+                    answer=f"I previously believed: {old_belief}\n\nAfter studying the evidence, I now understand: {new_view}",
+                    reasoning=f"Evidence: {evidence}" if evidence else "",
+                    category="correction",
+                    confidence=0.95  # High confidence for corrections
+                )
+        
+        # Q&A about knowledge gaps (for future learning)
+        if self.state.knowledge_gaps:
+            gaps_text = "\n".join(f"- {gap}" for gap in self.state.knowledge_gaps[:5])
+            self.session_manager.add_qa_pair(
+                question=f"What gaps remain in your understanding of {self.state.topic}?",
+                answer=gaps_text,
+                category="metacognitive",
+                confidence=0.8
+            )
+
     def _get_current_knowledge_summary(self) -> str:
         """Get a summary of current knowledge for context."""
         principles = self.kb.get_principles()[:5]
@@ -1227,13 +1421,24 @@ Return JSON:
         
         return summary or "No prior knowledge recorded"
     
-    def _llm_call(self, prompt: str, temperature: float = 0.3) -> str:
-        """Make an LLM call."""
+    def _llm_call(self, prompt: str, temperature: float = 0.3, phase: str = "") -> str:
+        """Make an LLM call and record for learning session."""
         messages = [
             {"role": "system", "content": "You are a cognitive assistant helping with learning and knowledge synthesis. Always respond with valid JSON."},
             {"role": "user", "content": prompt}
         ]
-        return get_chat_completion(messages, temperature=temperature)
+        response = get_chat_completion(messages, temperature=temperature)
+        
+        # Record thought trace for learning session
+        if self.config.get('save_session', True) and self.session_manager.current_session:
+            self.session_manager.record_thought(
+                phase=phase or (self.state.phase.value if self.state else "unknown"),
+                prompt=prompt,
+                response=response,
+                temperature=temperature
+            )
+        
+        return response
     
     def _parse_json(self, response: str) -> Dict:
         """Parse JSON from LLM response."""
@@ -1334,6 +1539,14 @@ Return JSON:
         """Get current state."""
         return self.state
     
+    def list_learning_sessions(self) -> List[Dict]:
+        """List all saved learning sessions."""
+        return self.session_manager.list_sessions()
+    
+    def export_all_training_data(self, output_file: Optional[Path] = None) -> Path:
+        """Export all Q&A pairs from all sessions into one training file."""
+        return self.session_manager.export_all_training_data(output_file)
+    
     def _generate_summary(self) -> Dict:
         """Generate a summary of the learning journey."""
         if not self.state:
@@ -1361,7 +1574,12 @@ Return JSON:
             "duration": {
                 "started": self.state.started_at,
                 "completed": self.state.updated_at
-            }
+            },
+            "learning_session": {
+                "session_id": self.state.loop_id,
+                "qa_pairs_generated": len(self.session_manager.current_session.qa_pairs) if self.session_manager.current_session else 0,
+                "thought_traces": len(self.session_manager.current_session.thought_traces) if self.session_manager.current_session else 0
+            } if self.config.get('save_session', True) else None
         }
     
     def get_summary_report(self) -> str:
@@ -1395,6 +1613,11 @@ Return JSON:
 
 ❓ REMAINING QUESTIONS:
 {chr(10).join(f'   • {q}' for q in summary['emerging_questions'][:5]) or '   (none)'}
+
+📝 LEARNING SESSION (for LoRA):
+   • Session ID: {summary.get('learning_session', {}).get('session_id', 'N/A') if summary.get('learning_session') else 'disabled'}
+   • Q&A Pairs: {summary.get('learning_session', {}).get('qa_pairs_generated', 0) if summary.get('learning_session') else 0}
+   • Thought Traces: {summary.get('learning_session', {}).get('thought_traces', 0) if summary.get('learning_session') else 0}
 
 ⏱️ Duration: {summary['duration']['started']} to {summary['duration']['completed']}
 """
