@@ -1,11 +1,30 @@
 principles:
-- 'First Law of Thermodynamics: Energy cannot be created or destroyed; in a closed system, ΔU = Q - W.'
-- 'Second Law of Thermodynamics: Entropy of an isolated system never decreases; ΔS_total ≥ 0.'
+- 'First Law of Thermodynamics: Energy cannot be created or destroyed; in a closed
+  system, ΔU = Q - W.'
+- 'Second Law of Thermodynamics: Entropy of an isolated system never decreases; ΔS_total
+  ≥ 0.'
 - 'Mass Balance: In a steady‑state reactor, ΣF_in - ΣF_out + Σr_i·ν_i = 0.'
-- 'Fourier’s Law of Heat Conduction: q = -k·∇T; heat flux is proportional to temperature gradient.'
-- 'Fick’s First Law of Diffusion: J = -D·∇C; mass flux is proportional to concentration gradient.'
-- 'Darcy’s Law for Porous Media Flow: Q = -k·A·ΔP/μ·L; volumetric flow rate is proportional to pressure drop.'
-- 'Arrhenius Equation: k = A·exp(-E_a/RT); reaction rate constant depends exponentially on temperature.'
-- 'Ideal Gas Law: PV = nRT; pressure, volume, and temperature of an ideal gas are related linearly.'
-- 'Le Chatelier’s Principle: A system at equilibrium will shift to counteract applied changes.'
-- 'Design of Experiments (DOE) Orthogonality: Factor levels are statistically independent to isolate effects.'
+- 'Fourier’s Law of Heat Conduction: q = -k·∇T; heat flux is proportional to temperature
+  gradient.'
+- 'Fick’s First Law of Diffusion: J = -D·∇C; mass flux is proportional to concentration
+  gradient.'
+- 'Darcy’s Law for Porous Media Flow: Q = -k·A·ΔP/μ·L; volumetric flow rate is proportional
+  to pressure drop.'
+- 'Arrhenius Equation: k = A·exp(-E_a/RT); reaction rate constant depends exponentially
+  on temperature.'
+- 'Ideal Gas Law: PV = nRT; pressure, volume, and temperature of an ideal gas are
+  related linearly.'
+- 'Le Chatelier’s Principle: A system at equilibrium will shift to counteract applied
+  changes.'
+- 'Design of Experiments (DOE) Orthogonality: Factor levels are statistically independent
+  to isolate effects.'
+- 'Thermodynamic consistency must be enforced at every scale; Gibbs free energy minimization
+  should be coupled directly to mass‑balance equations to prevent infeasible design
+  solutions. [Source: Synthesis on multiscale thermodynamic coupling]'
+- 'Thermodynamic constraints (e.g., Gibbs free energy minimization) must be embedded
+  in surrogate models to prevent unphysical predictions. [Source: ML‑augmented multiscale
+  workflow synthesis]'
+_meta:
+  last_updated: '2025-12-08T10:28:19.247865'
+  updated_by: knowledge_base
+  reason: add_principle

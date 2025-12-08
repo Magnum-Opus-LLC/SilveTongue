@@ -1,5 +1,6 @@
 import yaml
 import json
+import shutil
 from pathlib import Path
 from datetime import datetime
 
@@ -10,6 +11,7 @@ class KnowledgeBase:
         # Go up from src/utils/ to project root (lingkui/)
         self.project_root = Path(__file__).parent.parent.parent
         self.actor_root = self.project_root / 'actors' / actor_name
+        self.archive_root = self.actor_root / 'archive'
         self.paths = {
             'principles': self.actor_root / 'expertise' / 'domain' / 'principal' / 'principles.yaml',
             'adjustments': self.actor_root / 'expertise' / 'domain' / 'adjustment' / 'adjustments.yaml',
@@ -21,6 +23,9 @@ class KnowledgeBase:
             'learning_book': self.actor_root / 'learning_book.json'
         }
         self._cache = {}
+        
+        # Ensure archive directory exists
+        self.archive_root.mkdir(parents=True, exist_ok=True)
 
     def _load_yaml(self, key):
         """Load YAML file for a given key if not already cached."""
@@ -67,6 +72,354 @@ class KnowledgeBase:
     def refresh(self):
         """Clear cache to reload from disk."""
         self._cache = {}
+
+    # ==================== Archive & Update Methods ====================
+    
+    def _archive_file(self, key: str, reason: str = "update") -> Path:
+        """
+        Archive a file before making changes.
+        
+        Args:
+            key: The key name (e.g., 'principles', 'experiences')
+            reason: Reason for archiving (e.g., 'update', 'cognitive_loop', 'manual')
+            
+        Returns:
+            Path to the archived file
+        """
+        file_path = self.paths.get(key)
+        if not file_path or not file_path.exists():
+            return None
+        
+        # Create timestamped archive directory
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        archive_dir = self.archive_root / key
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Archive filename: principles_20251208_143022_update.yaml
+        archive_name = f"{file_path.stem}_{timestamp}_{reason}{file_path.suffix}"
+        archive_path = archive_dir / archive_name
+        
+        # Copy current file to archive
+        shutil.copy2(file_path, archive_path)
+        
+        return archive_path
+    
+    def _save_yaml(self, key: str, data: dict, archive: bool = True, reason: str = "update"):
+        """
+        Save data to a YAML file, optionally archiving the previous version.
+        
+        Args:
+            key: The key name (e.g., 'principles', 'experiences')
+            data: The data dict to save
+            archive: Whether to archive the previous version
+            reason: Reason for the change
+        """
+        file_path = self.paths.get(key)
+        if not file_path:
+            raise ValueError(f"Unknown key: {key}")
+        
+        # Archive if requested and file exists
+        if archive and file_path.exists():
+            self._archive_file(key, reason)
+        
+        # Ensure parent directory exists
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Add metadata
+        data['_meta'] = {
+            'last_updated': datetime.now().isoformat(),
+            'updated_by': 'cognitive_loop' if reason == 'cognitive_loop' else 'knowledge_base',
+            'reason': reason
+        }
+        
+        # Save to file
+        with open(file_path, 'w') as f:
+            yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        
+        # Update cache
+        self._cache[key] = data
+    
+    def add_principle(self, principle: str, source: str = None, archive: bool = True):
+        """
+        Add a new principle to the actor's knowledge base.
+        
+        Args:
+            principle: The principle text
+            source: Where this principle came from (e.g., paper name)
+            archive: Whether to archive the previous file
+        """
+        data = self._load_yaml('principles')
+        principles = data.get('principles', [])
+        
+        # Add with source annotation if provided
+        if source:
+            principle = f"{principle} [Source: {source}]"
+        
+        # Avoid duplicates (check if similar principle exists)
+        principle_lower = principle.lower()
+        for existing in principles:
+            if existing.lower()[:50] == principle_lower[:50]:
+                return False  # Already exists
+        
+        principles.append(principle)
+        data['principles'] = principles
+        
+        self._save_yaml('principles', data, archive=archive, reason='add_principle')
+        self.record_knowledge_evolution('principles_added', principle[:100])
+        
+        return True
+    
+    def update_principle(self, old_principle: str, new_principle: str, reason: str = "refined"):
+        """
+        Update/refine an existing principle.
+        
+        Args:
+            old_principle: The original principle (or substring to match)
+            new_principle: The updated principle
+            reason: Reason for the update
+        """
+        data = self._load_yaml('principles')
+        principles = data.get('principles', [])
+        
+        # Find and replace
+        old_lower = old_principle.lower()
+        for i, p in enumerate(principles):
+            if old_lower in p.lower():
+                principles[i] = f"{new_principle} [Refined: {datetime.now().strftime('%Y-%m-%d')}]"
+                data['principles'] = principles
+                self._save_yaml('principles', data, archive=True, reason=f'refine_principle_{reason}')
+                self.record_knowledge_evolution('principles_refined', f"{old_principle[:50]} -> {new_principle[:50]}")
+                return True
+        
+        return False
+    
+    def add_experience(self, experience: str, source: str = None, archive: bool = True):
+        """
+        Add a new experience to the actor's knowledge base.
+        
+        Args:
+            experience: The experience text
+            source: Where this experience came from
+            archive: Whether to archive the previous file
+        """
+        data = self._load_yaml('experiences')
+        experiences = data.get('experiences', [])
+        
+        if source:
+            experience = f"{experience} [Source: {source}]"
+        
+        # Avoid duplicates
+        exp_lower = experience.lower()[:50]
+        for existing in experiences:
+            if existing.lower()[:50] == exp_lower:
+                return False
+        
+        experiences.append(experience)
+        data['experiences'] = experiences
+        
+        self._save_yaml('experiences', data, archive=archive, reason='add_experience')
+        self.record_knowledge_evolution('experiences_learned', experience[:100])
+        
+        return True
+    
+    def add_core_knowledge(self, knowledge: str, source: str = None, archive: bool = True):
+        """Add new core knowledge."""
+        data = self._load_yaml('core_knowledge')
+        items = data.get('core_knowledge', [])
+        
+        if source:
+            knowledge = f"{knowledge} [Source: {source}]"
+        
+        # Avoid duplicates
+        k_lower = knowledge.lower()[:50]
+        for existing in items:
+            if existing.lower()[:50] == k_lower:
+                return False
+        
+        items.append(knowledge)
+        data['core_knowledge'] = items
+        
+        self._save_yaml('core_knowledge', data, archive=archive, reason='add_knowledge')
+        
+        return True
+    
+    def add_supporting_knowledge(self, knowledge: str, source: str = None, archive: bool = True):
+        """Add new supporting knowledge."""
+        data = self._load_yaml('supporting_knowledge')
+        items = data.get('supporting_knowledge', [])
+        
+        if source:
+            knowledge = f"{knowledge} [Source: {source}]"
+        
+        # Avoid duplicates
+        k_lower = knowledge.lower()[:50]
+        for existing in items:
+            if existing.lower()[:50] == k_lower:
+                return False
+        
+        items.append(knowledge)
+        data['supporting_knowledge'] = items
+        
+        self._save_yaml('supporting_knowledge', data, archive=archive, reason='add_supporting')
+        
+        return True
+    
+    def add_challenge(self, challenge: str, source: str = None, archive: bool = True):
+        """Add a new challenge encountered."""
+        data = self._load_yaml('challenges')
+        challenges = data.get('challenges', [])
+        
+        if source:
+            challenge = f"{challenge} [Source: {source}]"
+        
+        challenges.append(f"[{datetime.now().strftime('%Y-%m-%d')}] {challenge}")
+        data['challenges'] = challenges
+        
+        self._save_yaml('challenges', data, archive=archive, reason='add_challenge')
+        self.record_knowledge_evolution('challenges_encountered', challenge[:100])
+        
+        return True
+    
+    def resolve_challenge(self, challenge_substring: str, resolution: str):
+        """Mark a challenge as resolved."""
+        data = self._load_yaml('challenges')
+        challenges = data.get('challenges', [])
+        
+        challenge_lower = challenge_substring.lower()
+        for i, c in enumerate(challenges):
+            if challenge_lower in c.lower():
+                challenges[i] = f"{c} [RESOLVED: {resolution}]"
+                data['challenges'] = challenges
+                self._save_yaml('challenges', data, archive=True, reason='resolve_challenge')
+                self.record_knowledge_evolution('challenges_resolved', f"{challenge_substring[:50]}: {resolution[:50]}")
+                return True
+        
+        return False
+    
+    def add_adjustment(self, adjustment: str, source: str = None, archive: bool = True):
+        """Add a behavioral/methodological adjustment."""
+        data = self._load_yaml('adjustments')
+        adjustments = data.get('adjustments', [])
+        
+        if source:
+            adjustment = f"{adjustment} [Source: {source}]"
+        
+        adjustments.append(f"[{datetime.now().strftime('%Y-%m-%d')}] {adjustment}")
+        data['adjustments'] = adjustments
+        
+        self._save_yaml('adjustments', data, archive=archive, reason='add_adjustment')
+        
+        return True
+    
+    def bulk_update(self, updates: dict, reason: str = "cognitive_loop"):
+        """
+        Apply multiple updates at once.
+        
+        Args:
+            updates: Dict with keys like 'principles', 'experiences', etc.
+                     Each value is a list of items to add.
+            reason: Reason for the bulk update
+        """
+        results = {
+            'principles_added': 0,
+            'experiences_added': 0,
+            'knowledge_added': 0,
+            'challenges_added': 0,
+            'adjustments_added': 0
+        }
+        
+        source = f"bulk_update_{datetime.now().strftime('%Y%m%d')}"
+        
+        for principle in updates.get('principles', []):
+            if self.add_principle(principle, source=source):
+                results['principles_added'] += 1
+        
+        for experience in updates.get('experiences', []):
+            if self.add_experience(experience, source=source):
+                results['experiences_added'] += 1
+        
+        for knowledge in updates.get('core_knowledge', []):
+            if self.add_core_knowledge(knowledge, source=source):
+                results['knowledge_added'] += 1
+        
+        for knowledge in updates.get('supporting_knowledge', []):
+            if self.add_supporting_knowledge(knowledge, source=source):
+                results['knowledge_added'] += 1
+        
+        for challenge in updates.get('challenges', []):
+            if self.add_challenge(challenge, source=source):
+                results['challenges_added'] += 1
+        
+        for adjustment in updates.get('adjustments', []):
+            if self.add_adjustment(adjustment, source=source):
+                results['adjustments_added'] += 1
+        
+        return results
+    
+    def get_archive_history(self, key: str = None) -> list:
+        """
+        Get archive history for a key or all keys.
+        
+        Args:
+            key: Specific key to get history for, or None for all
+            
+        Returns:
+            List of archived files with metadata
+        """
+        history = []
+        
+        if key:
+            archive_dir = self.archive_root / key
+            if archive_dir.exists():
+                for f in sorted(archive_dir.glob('*'), reverse=True):
+                    history.append({
+                        'key': key,
+                        'file': f.name,
+                        'path': str(f),
+                        'modified': datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+                    })
+        else:
+            for k in self.paths.keys():
+                if k == 'learning_book':
+                    continue
+                archive_dir = self.archive_root / k
+                if archive_dir.exists():
+                    for f in sorted(archive_dir.glob('*'), reverse=True)[:5]:
+                        history.append({
+                            'key': k,
+                            'file': f.name,
+                            'path': str(f),
+                            'modified': datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+                        })
+        
+        return history
+    
+    def restore_from_archive(self, key: str, archive_filename: str):
+        """
+        Restore a previous version from archive.
+        
+        Args:
+            key: The key to restore (e.g., 'principles')
+            archive_filename: The archive file to restore from
+        """
+        archive_path = self.archive_root / key / archive_filename
+        
+        if not archive_path.exists():
+            raise FileNotFoundError(f"Archive not found: {archive_path}")
+        
+        target_path = self.paths.get(key)
+        
+        # Archive current before restore
+        self._archive_file(key, reason='pre_restore')
+        
+        # Copy archive to target
+        shutil.copy2(archive_path, target_path)
+        
+        # Clear cache
+        if key in self._cache:
+            del self._cache[key]
+        
+        return True
 
     # ==================== Learning Book Methods ====================
     

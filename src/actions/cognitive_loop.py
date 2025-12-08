@@ -285,13 +285,19 @@ EXPANSIONS: {expansions}
 CHALLENGES: {challenges}
 REVOLUTIONARY IDEAS: {revolutionary}
 
-Decide what updates to make:
-1. Which beliefs to strengthen (confirmations)?
-2. What new knowledge to integrate (expansions)?
-3. Which beliefs need investigation (challenges)?
-4. What new principles to adopt (revolutionary)?
+Decide what updates to make. These will be PERSISTED to the actor's knowledge files.
 
-Be conservative with updates. Not everything deserves integration.
+Knowledge Types:
+- "principle": Fundamental truths, laws, or guidelines (e.g., "First Law of Thermodynamics")
+- "experience": Practical insights, observations, case studies learned
+- "knowledge": Core facts, methods, techniques, definitions
+- "challenge": Open questions, unresolved issues, areas needing investigation
+
+Guidelines:
+1. Be selective - only add genuinely valuable insights
+2. Be specific - vague statements are not useful
+3. Be concise - each item should be 1-2 sentences
+4. Include source attribution when relevant
 
 Return JSON:
 {{
@@ -300,19 +306,21 @@ Return JSON:
     ],
     "knowledge_to_add": [
         {{
-            "type": "principle|experience|knowledge",
-            "content": "what to add",
-            "source": "where it came from"
+            "type": "principle|experience|knowledge|challenge",
+            "content": "clear, specific statement to add",
+            "source": "paper/topic that provided this insight"
         }}
     ],
     "beliefs_to_investigate": [
         {{
             "belief": "what to investigate",
-            "reason": "why"
+            "reason": "why it needs investigation"
         }}
     ],
-    "update_summary": "summary of updates made"
+    "update_summary": "1-2 sentence summary of what was learned and updated"
 }}
+
+Be conservative. Quality over quantity. Only include items that provide genuine value.
 """
 
 EXPANSION_PROMPT = """You are identifying knowledge gaps and planning further exploration.
@@ -1022,7 +1030,7 @@ Return JSON:
         self.state.phase = LoopPhase.UPDATE
     
     def _phase_update(self):
-        """UPDATE phase: Integrate new knowledge into knowledge base."""
+        """UPDATE phase: Integrate new knowledge into knowledge base and persist to files."""
         self._log("📝 Updating knowledge base...")
         
         prompt = UPDATE_DECISION_PROMPT.format(
@@ -1043,19 +1051,79 @@ Return JSON:
         for update in mindset_updates:
             self._log(f"   🔄 Mindset: {update[:60]}...")
         
-        # Record knowledge evolution
+        # Track what was persisted
+        persisted = {
+            'principles': 0,
+            'experiences': 0,
+            'knowledge': 0,
+            'challenges': 0
+        }
+        
+        # PERSIST knowledge to actor's YAML files (with archiving)
+        source = f"cognitive_loop_{self.state.topic[:30]}"
+        
         for knowledge in updates.get('knowledge_to_add', []):
             k_type = knowledge.get('type', 'experience')
             content = knowledge.get('content', '')
-            source = knowledge.get('source', self.state.topic)
+            k_source = knowledge.get('source', self.state.topic)
             
-            self.kb.record_knowledge_evolution(
-                f"{k_type}_added",
-                f"[{source}] {content}"
-            )
+            # Persist based on type
+            if k_type == 'principle':
+                if self.kb.add_principle(content, source=k_source):
+                    persisted['principles'] += 1
+                    self._log(f"   💾 Persisted principle: {content[:50]}...")
+            elif k_type == 'experience':
+                if self.kb.add_experience(content, source=k_source):
+                    persisted['experiences'] += 1
+                    self._log(f"   💾 Persisted experience: {content[:50]}...")
+            elif k_type == 'knowledge':
+                if self.kb.add_core_knowledge(content, source=k_source):
+                    persisted['knowledge'] += 1
+                    self._log(f"   💾 Persisted knowledge: {content[:50]}...")
+            elif k_type == 'challenge':
+                if self.kb.add_challenge(content, source=k_source):
+                    persisted['challenges'] += 1
+                    self._log(f"   💾 Persisted challenge: {content[:50]}...")
+            else:
+                # Default to experience
+                if self.kb.add_experience(content, source=k_source):
+                    persisted['experiences'] += 1
             
             self.state.knowledge_evolved.append(knowledge)
-            self._log(f"   ➕ Added {k_type}: {content[:50]}...")
+        
+        # Handle beliefs that need investigation (add as challenges)
+        for belief in updates.get('beliefs_to_investigate', []):
+            belief_text = belief.get('belief', belief) if isinstance(belief, dict) else belief
+            reason = belief.get('reason', 'needs investigation') if isinstance(belief, dict) else 'needs investigation'
+            if self.kb.add_challenge(f"{belief_text} - {reason}", source=source):
+                persisted['challenges'] += 1
+                self._log(f"   💾 Added investigation: {belief_text[:50]}...")
+        
+        # Process revolutionary ideas as new principles
+        for rev in self.state.revolutionary_ideas[-3:]:
+            paradigm = rev.get('new_paradigm', '')
+            adoption = rev.get('adoption', 'investigate')
+            if adoption == 'adopt' and paradigm:
+                if self.kb.add_principle(paradigm, source=f"revolutionary_{source}"):
+                    persisted['principles'] += 1
+                    self._log(f"   🚀 Adopted revolutionary principle: {paradigm[:50]}...")
+        
+        # Process expansions as new knowledge/experiences
+        for exp in self.state.expansions[-5:]:
+            new_persp = exp.get('new_perspective', '')
+            if new_persp:
+                if self.kb.add_experience(new_persp, source=source):
+                    persisted['experiences'] += 1
+        
+        # Log persistence summary
+        total_persisted = sum(persisted.values())
+        if total_persisted > 0:
+            self._log(f"\n   💾 PERSISTED TO ACTOR FILES:")
+            self._log(f"      Principles: {persisted['principles']}")
+            self._log(f"      Experiences: {persisted['experiences']}")
+            self._log(f"      Knowledge: {persisted['knowledge']}")
+            self._log(f"      Challenges: {persisted['challenges']}")
+            self._log(f"      (Previous versions archived)")
         
         # Record learning event
         self.kb.record_learning_event(
@@ -1064,6 +1132,7 @@ Return JSON:
             insights=[
                 f"Studied {len(self.state.studied_papers)} papers",
                 f"Extracted {len(self.state.knowledge_bits)} knowledge bits",
+                f"Persisted {total_persisted} items to actor files",
                 updates.get('update_summary', 'Knowledge updated')
             ],
             mindset_changes=mindset_updates
@@ -1073,7 +1142,8 @@ Return JSON:
         
         self._record_history("update", {
             "mindset_updates": len(mindset_updates),
-            "knowledge_added": len(updates.get('knowledge_to_add', []))
+            "knowledge_added": len(updates.get('knowledge_to_add', [])),
+            "persisted": persisted
         })
         
         self.state.phase = LoopPhase.EXPAND

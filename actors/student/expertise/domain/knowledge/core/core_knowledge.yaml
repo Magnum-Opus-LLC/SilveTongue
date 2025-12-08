@@ -1,12 +1,34 @@
 core_knowledge:
 - 'Thermodynamics: The Gibbs free energy change ΔG = ΔH - TΔS determines spontaneity.'
-- 'Transport Phenomena: Momentum, heat, and mass transfer coefficients can be estimated using dimensionless numbers (Re, Pr,
-  Sc).'
-- 'Reaction Engineering: The Damköhler number (Da) compares reaction rate to transport rate.'
-- 'Process Simulation: Aspen Plus and ChemCAD can model steady‑state and dynamic behavior of chemical processes.'
-- 'Unit Operations: Distillation column design uses McCabe–Thiele method for binary mixtures.'
-- 'Safety: OSHA Hazard Communication Standard requires labeling of hazardous chemicals with GHS pictograms.'
-- 'Environmental Impact: The E-factor (kg waste/kg product) is a key metric for process greenness.'
-- 'Catalysis: Turnover frequency (TOF) is defined as moles of product per mole of catalyst per hour.'
-- 'Phase Equilibria: Raoult’s law applies to ideal solutions; deviations are quantified by activity coefficients.'
-- 'Heat Transfer: Nusselt number correlates convective heat transfer to conductive heat transfer.'
+- 'Transport Phenomena: Momentum, heat, and mass transfer coefficients can be estimated
+  using dimensionless numbers (Re, Pr, Sc).'
+- 'Reaction Engineering: The Damköhler number (Da) compares reaction rate to transport
+  rate.'
+- 'Process Simulation: Aspen Plus and ChemCAD can model steady‑state and dynamic behavior
+  of chemical processes.'
+- 'Unit Operations: Distillation column design uses McCabe–Thiele method for binary
+  mixtures.'
+- 'Safety: OSHA Hazard Communication Standard requires labeling of hazardous chemicals
+  with GHS pictograms.'
+- 'Environmental Impact: The E-factor (kg waste/kg product) is a key metric for process
+  greenness.'
+- 'Catalysis: Turnover frequency (TOF) is defined as moles of product per mole of
+  catalyst per hour.'
+- 'Phase Equilibria: Raoult’s law applies to ideal solutions; deviations are quantified
+  by activity coefficients.'
+- 'Heat Transfer: Nusselt number correlates convective heat transfer to conductive
+  heat transfer.'
+- 'Hybrid simulation architectures can be built by wrapping atomistic or kinetic Monte
+  Carlo outputs as plugin modules for commercial process simulators (e.g., Aspen,
+  ChemCAD), enabling real‑time equilibrium constraint enforcement. [Source: Expansion
+  on plugin architectures]'
+- 'Active‑learning loops that query high‑resolution atomistic simulations in under‑sampled
+  regions can dramatically reduce data requirements for multiscale models. [Source:
+  Data scarcity challenge in synthesis]'
+- 'Hybrid coupling strategies (hierarchical, concurrent, hybrid) enable seamless transfer
+  of kinetic and thermodynamic data from ReaxFF to continuum reactor simulators. [Source:
+  Multiscale coupling hierarchy in synthesis]'
+_meta:
+  last_updated: '2025-12-08T10:28:19.283867'
+  updated_by: knowledge_base
+  reason: add_knowledge
