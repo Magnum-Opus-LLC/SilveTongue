@@ -7,7 +7,8 @@ from datetime import datetime
 class KnowledgeBase:
     def __init__(self, actor_name='template'):
         self.actor_name = actor_name
-        self.project_root = Path(__file__).parent.parent
+        # Go up from src/utils/ to project root (lingkui/)
+        self.project_root = Path(__file__).parent.parent.parent
         self.actor_root = self.project_root / 'actors' / actor_name
         self.paths = {
             'principles': self.actor_root / 'expertise' / 'domain' / 'principal' / 'principles.yaml',
