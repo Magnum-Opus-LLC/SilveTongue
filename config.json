@@ -1,5 +1,6 @@
 {
     "apiHost": "http://192.168.1.201:8355",
     "apiKey": "EMPTY",
-    "model": "local-model"
+    "model": "local-model",
+    "array_dir": "/Volumes/ext_disk/LLM_Projects/lingkui/array"
 }

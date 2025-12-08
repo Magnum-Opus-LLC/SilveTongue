@@ -5,12 +5,33 @@ from pathlib import Path
 from datetime import datetime
 
 
+def get_array_dir() -> Path:
+    """Get the array_dir from config.json."""
+    try:
+        from src.utils.chat_utils import load_config
+        config = load_config()
+        return Path(config.get('array_dir', ''))
+    except Exception:
+        # Fallback to project root
+        return Path(__file__).parent.parent.parent
+
+
 class KnowledgeBase:
     def __init__(self, actor_name='template'):
         self.actor_name = actor_name
-        # Go up from src/utils/ to project root (lingkui/)
         self.project_root = Path(__file__).parent.parent.parent
-        self.actor_root = self.project_root / 'actors' / actor_name
+        
+        # Template stays in core, all other actors go to array_dir
+        if actor_name == 'template':
+            self.actor_root = self.project_root / 'actors' / actor_name
+        else:
+            array_dir = get_array_dir()
+            self.actor_root = array_dir / 'actors' / actor_name
+            
+            # If actor doesn't exist in array_dir, copy from template
+            if not self.actor_root.exists():
+                self._init_actor_from_template()
+        
         self.archive_root = self.actor_root / 'archive'
         self.paths = {
             'principles': self.actor_root / 'expertise' / 'domain' / 'principal' / 'principles.yaml',
@@ -26,6 +47,13 @@ class KnowledgeBase:
         
         # Ensure archive directory exists
         self.archive_root.mkdir(parents=True, exist_ok=True)
+    
+    def _init_actor_from_template(self):
+        """Initialize a new actor by copying from template."""
+        template_root = self.project_root / 'actors' / 'template'
+        if template_root.exists():
+            shutil.copytree(template_root, self.actor_root)
+            print(f"📁 Created new actor '{self.actor_name}' from template at {self.actor_root}")
 
     def _load_yaml(self, key):
         """Load YAML file for a given key if not already cached."""

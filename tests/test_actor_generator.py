@@ -67,22 +67,26 @@ challenges: []
             with open(template_dir / 'behavior.json', 'w') as f:
                 f.write('{}')
             
-            profile = {
-                "values": ["Test Value"],
-                "principles": ["Test Principle"],
-                "core_knowledge": ["Test Knowledge"],
-                "supporting_knowledge": [],
-                "experiences": [],
-                "adjustments": [],
-                "challenges": []
-            }
-            
-            save_actor_profile(profile, "test_actor", project_root=Path(tmpdir))
-            
-            # Check files were created
-            actor_dir = Path(tmpdir) / 'actors' / 'test_actor'
-            self.assertTrue((actor_dir / 'characteristic' / 'value' / 'values.yaml').exists())
-            self.assertTrue((actor_dir / 'expertise' / 'domain' / 'principal' / 'principles.yaml').exists())
+            # Mock load_config to return tmpdir as array_dir
+            with patch('src.utils.chat_utils.load_config') as mock_config:
+                mock_config.return_value = {'array_dir': tmpdir}
+                
+                profile = {
+                    "values": ["Test Value"],
+                    "principles": ["Test Principle"],
+                    "core_knowledge": ["Test Knowledge"],
+                    "supporting_knowledge": [],
+                    "experiences": [],
+                    "adjustments": [],
+                    "challenges": []
+                }
+                
+                save_actor_profile(profile, "test_actor", project_root=Path(tmpdir))
+                
+                # Check files were created in array_dir/actors/
+                actor_dir = Path(tmpdir) / 'actors' / 'test_actor'
+                self.assertTrue((actor_dir / 'characteristic' / 'value' / 'values.yaml').exists())
+                self.assertTrue((actor_dir / 'expertise' / 'domain' / 'principal' / 'principles.yaml').exists())
 
 
 if __name__ == '__main__':

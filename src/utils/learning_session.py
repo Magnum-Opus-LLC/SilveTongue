@@ -187,8 +187,15 @@ class LearningSessionManager:
         self.actor_name = actor_name
         
         if data_dir is None:
-            project_root = Path(__file__).parent.parent.parent
-            data_dir = project_root / "data"
+            # Use array_dir from config.json for data storage
+            try:
+                from src.utils.chat_utils import load_config
+                config = load_config()
+                data_dir = Path(config.get('array_dir', '')) / "data"
+            except Exception:
+                # Fallback to project data dir
+                project_root = Path(__file__).parent.parent.parent
+                data_dir = project_root / "data"
         
         self.data_dir = Path(data_dir)
         self.sessions_dir = self.data_dir / actor_name / "learning_sessions"
@@ -297,7 +304,8 @@ class LearningSessionManager:
     
     def record_insight(self, insight_type: str, content: str, 
                       evidence: List[str] = None, prior: str = "",
-                      new_understanding: str = "", confidence: float = 0.8):
+                      new_understanding: str = "", confidence: float = 0.8,
+                      implications: List[str] = None):
         """Record an insight or realization."""
         if not self.current_session:
             return
@@ -308,7 +316,8 @@ class LearningSessionManager:
             evidence=evidence or [],
             prior_belief=prior,
             new_understanding=new_understanding,
-            confidence=confidence
+            confidence=confidence,
+            implications=implications or []
         )
         
         self.current_session.insights.append(insight)

@@ -94,10 +94,23 @@ class ScholarSearcher:
         
         Args:
             save_results: Whether to automatically save search results
-            results_dir: Directory to save results (default: data/scholar_results)
+            results_dir: Directory to save results (default: array_dir/data/scholar_results)
         """
         self.save_results = save_results
-        self.results_dir = Path(results_dir) if results_dir else Path(__file__).parent.parent.parent / 'data' / 'scholar_results'
+        
+        if results_dir:
+            self.results_dir = Path(results_dir)
+        else:
+            # Use array_dir from config for data storage
+            try:
+                from src.utils.chat_utils import load_config
+                config = load_config()
+                array_dir = Path(config.get('array_dir', ''))
+                self.results_dir = array_dir / 'data' / 'scholar_results'
+            except Exception:
+                # Fallback to project dir
+                self.results_dir = Path(__file__).parent.parent.parent / 'data' / 'scholar_results'
+        
         self._search_history = []
     
     def search(self, query: str, depth: int = 2, year_from: int = None, 

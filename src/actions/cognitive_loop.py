@@ -438,9 +438,16 @@ class CognitiveLoop:
             'save_session': True  # Save learning session for LoRA
         }
         
-        # Paths
+        # Paths - use array_dir from config for data storage
         self.project_root = Path(__file__).parent.parent.parent
-        self.loops_dir = self.project_root / 'data' / actor_name / 'cognitive_loops'
+        try:
+            from src.utils.chat_utils import load_config
+            app_config = load_config()
+            array_dir = Path(app_config.get('array_dir', ''))
+            self.loops_dir = array_dir / 'data' / actor_name / 'cognitive_loops'
+        except Exception:
+            # Fallback to project dir
+            self.loops_dir = self.project_root / 'data' / actor_name / 'cognitive_loops'
         self.loops_dir.mkdir(parents=True, exist_ok=True)
     
     def configure(self, **kwargs):

@@ -128,13 +128,23 @@ def save_actor_profile(profile: dict, actor_name: str, project_root: Path = None
     
     Args:
         profile: Dictionary containing all profile categories
-        actor_name: Name of the actor (will create directory under actors/)
+        actor_name: Name of the actor (will create directory under array_dir/actors/)
         project_root: Root of the project (defaults to parent of src/)
     """
     if project_root is None:
-        project_root = Path(__file__).parent.parent
+        project_root = Path(__file__).parent.parent.parent
     
-    actor_root = project_root / 'actors' / actor_name
+    # Template stays in core, all other actors go to array_dir
+    if actor_name == 'template':
+        actor_root = project_root / 'actors' / actor_name
+    else:
+        try:
+            from src.utils.chat_utils import load_config
+            config = load_config()
+            array_dir = Path(config.get('array_dir', ''))
+            actor_root = array_dir / 'actors' / actor_name
+        except Exception:
+            actor_root = project_root / 'actors' / actor_name
     
     # Define paths
     paths = {
@@ -162,7 +172,7 @@ def save_actor_profile(profile: dict, actor_name: str, project_root: Path = None
         
         print(f"Saved {key} to {path}")
     
-    # Copy behavior.json from template
+    # Copy behavior.json from template (template is always in project root)
     template_behavior = project_root / 'actors' / 'template' / 'behavior.json'
     actor_behavior = actor_root / 'behavior.json'
     if template_behavior.exists() and not actor_behavior.exists():
