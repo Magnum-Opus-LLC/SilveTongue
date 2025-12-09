@@ -26,6 +26,75 @@ sys.path.insert(0, str(project_root))
 from src.actions.cognitive_loop import CognitiveLoop, learn, learn_nonstop, run_forever
 from src.utils.lingkui_chat import interactive_chat as chat_with_lingkui
 
+# Global variable to store selected actor
+SELECTED_ACTOR = None
+
+
+def get_available_actors():
+    """Get list of available actors from array/actors directory."""
+    from src.utils.chat_utils import load_config
+    
+    config = load_config()
+    array_dir = Path(config.get('array_dir', 'array'))
+    actors_dir = array_dir / 'actors'
+    
+    if not actors_dir.exists():
+        return []
+    
+    actors = []
+    for item in actors_dir.iterdir():
+        if item.is_dir() and not item.name.startswith('.'):
+            # Check if it has the required files
+            if (item / 'behavior.json').exists() or (item / 'characteristic').exists():
+                actors.append(item.name)
+    
+    return sorted(actors)
+
+
+def select_actor():
+    """Prompt user to select an actor."""
+    global SELECTED_ACTOR
+    
+    actors = get_available_actors()
+    
+    if not actors:
+        print("\n⚠️  No actors found in array/actors/")
+        print("   Using default: student")
+        SELECTED_ACTOR = 'student'
+        return SELECTED_ACTOR
+    
+    print("\n" + "─" * 40)
+    print("🎭 SELECT ACTOR")
+    print("─" * 40)
+    
+    for i, actor in enumerate(actors, 1):
+        marker = "  "
+        if SELECTED_ACTOR == actor:
+            marker = "→ "
+        print(f"  {marker}{i}. {actor}")
+    
+    print()
+    
+    try:
+        choice = input(f"Select actor [1-{len(actors)}] (or Enter for '{actors[0]}'): ").strip()
+        
+        if not choice:
+            SELECTED_ACTOR = actors[0]
+        elif choice.isdigit() and 1 <= int(choice) <= len(actors):
+            SELECTED_ACTOR = actors[int(choice) - 1]
+        elif choice in actors:
+            SELECTED_ACTOR = choice
+        else:
+            print(f"Invalid choice, using: {actors[0]}")
+            SELECTED_ACTOR = actors[0]
+            
+    except (EOFError, KeyboardInterrupt):
+        print(f"\nUsing: {actors[0]}")
+        SELECTED_ACTOR = actors[0]
+    
+    print(f"\n✅ Selected actor: {SELECTED_ACTOR}")
+    return SELECTED_ACTOR
+
 
 def show_banner():
     """Display the application banner."""
@@ -73,7 +142,7 @@ def demo_full_learning():
     print(f"🎯 Goal: {goal}")
     print("\n" + "=" * 70)
     
-    loop = CognitiveLoop('student', verbose=True)
+    loop = CognitiveLoop(SELECTED_ACTOR, verbose=True)
     loop.configure(
         fetch_pdfs=True,
         save_session=True,
@@ -106,7 +175,7 @@ def demo_step_by_step():
     print("\nYou control when each phase runs.")
     print("Press Enter to advance, 'q' to quit, 's' to skip phase.\n")
     
-    loop = CognitiveLoop('student', verbose=True)
+    loop = CognitiveLoop(SELECTED_ACTOR, verbose=True)
     loop.configure(
         fetch_pdfs=True,
         save_session=True,
@@ -154,7 +223,7 @@ def demo_quick_learn():
     print("=" * 70)
     
     result = learn(
-        actor_name='student',
+        actor_name=SELECTED_ACTOR,
         topic=topic,
         goal=goal,
         max_iterations=1,
@@ -181,7 +250,7 @@ def demo_nonstop_mode():
     print(f"🎯 Goal: {goal}")
     print("\n⚠️  Press Ctrl+C at any time to gracefully stop and save\n")
     
-    loop = CognitiveLoop('student', verbose=True)
+    loop = CognitiveLoop(SELECTED_ACTOR, verbose=True)
     loop.configure(
         fetch_pdfs=True,
         save_session=True,
@@ -247,7 +316,7 @@ def demo_forever_mode():
     
     print("\n🚀 Starting forever mode...\n")
     
-    loop = CognitiveLoop('student', verbose=True)
+    loop = CognitiveLoop(SELECTED_ACTOR, verbose=True)
     loop.configure(
         fetch_pdfs=True,
         save_session=True,
@@ -276,7 +345,7 @@ def demo_no_pdf_mode():
     print(f"\n⚡ Fast learning (abstracts only): {topic}")
     print("=" * 70)
     
-    loop = CognitiveLoop('student', verbose=True)
+    loop = CognitiveLoop(SELECTED_ACTOR, verbose=True)
     loop.configure(
         fetch_pdfs=False,  # Disable PDF fetching
         save_session=True,
@@ -304,7 +373,7 @@ def view_learning_sessions():
     print("📚 SAVED LEARNING SESSIONS")
     print("=" * 70)
     
-    manager = LearningSessionManager('student')
+    manager = LearningSessionManager(SELECTED_ACTOR)
     sessions = manager.list_sessions()
     
     if not sessions:
@@ -329,19 +398,27 @@ def view_learning_sessions():
 def main():
     show_banner()
     
-    print("Select mode:")
+    # First, select which actor to use
+    select_actor()
+    
+    print("\n" + "─" * 40)
+    print(f"🎭 Active Actor: {SELECTED_ACTOR}")
+    print("─" * 40)
+    
+    print("\nSelect mode:")
     print("  1. 📖 Full Learning Journey (2 iterations)")
     print("  2. 🎮 Step-by-Step Control")
     print("  3. ⚡ Quick Learn (1 iteration)")
     print("  4. 🔄 Non-Stop Mode (until goal achieved)")
     print("  5. 🌀 Forever Mode (runs indefinitely)")
     print("  6. 🚀 Fast Mode (abstracts only, no PDF)")
-    print("  7. � Chat with Lingkui")
+    print("  7. 💬 Chat with Lingkui")
     print("  8. 📚 View Saved Sessions")
-    print("  9. 🚪 Exit")
+    print("  9. 🔄 Change Actor")
+    print("  0. 🚪 Exit")
     
     try:
-        choice = input("\nChoice [1-9]: ").strip() or "1"
+        choice = input("\nChoice [0-9]: ").strip() or "1"
     except (EOFError, KeyboardInterrupt):
         print("\nGoodbye!")
         return
@@ -359,9 +436,12 @@ def main():
     elif choice == "6":
         demo_no_pdf_mode()
     elif choice == "7":
-        chat_with_lingkui("student")
+        chat_with_lingkui(SELECTED_ACTOR)
     elif choice == "8":
         view_learning_sessions()
+    elif choice == "9":
+        select_actor()
+        main()  # Restart menu with new actor
     else:
         print("Goodbye!")
 
