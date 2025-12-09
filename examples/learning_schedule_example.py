@@ -91,7 +91,7 @@ def main():
         # Export summary if there were successful results
         if result['successful'] > 0:
             export = input("\nExport knowledge summary to markdown? (y/n): ").strip().lower()
-            if export == 'y':
+            if export == 'y': 
                 output_path = f"knowledge_summary_{schedule_id}.md"
                 runner.export_knowledge_summary(schedule_id, output_path)
                 print(f"✅ Summary exported to: {output_path}")

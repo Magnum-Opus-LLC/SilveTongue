@@ -558,7 +558,12 @@ class CognitiveLoop:
                 self.state.iteration > max_iterations):
                 self._log(f"\n🛑 Max iterations ({max_iterations}) reached")
                 self.state.phase = LoopPhase.COMPLETE
+                self._finalize_learning_session()
                 break
+        
+        # Finalize session if not already done (in case loop ended naturally)
+        if self.session_manager.current_session and not self.session_manager.current_session.completed_at:
+            self._finalize_learning_session()
         
         return self._generate_summary()
     
@@ -640,20 +645,27 @@ class CognitiveLoop:
                 if stop_condition and stop_condition(self.state):
                     self._log(f"\n🛑 Stop condition met")
                     self.state.phase = LoopPhase.COMPLETE
+                    self._finalize_learning_session()
                     break
                 
                 # Check iteration limit
                 if self.state.phase == LoopPhase.SEARCH and self.state.iteration > max_iterations:
                     self._log(f"\n🛑 Max iterations ({max_iterations}) reached")
                     self.state.phase = LoopPhase.COMPLETE
+                    self._finalize_learning_session()
                     break
                     
         except KeyboardInterrupt:
             self._log(f"\n\n⚠️ Interrupted by user (Ctrl+C)")
-            self._log(f"   Saving current state...")
+            self._log(f"   Saving current state and session...")
+            self._finalize_learning_session()  # Save session data before exit
             self.state.phase = LoopPhase.PAUSED
             self._save_state()
             self._log(f"   State saved. Resume with: resume_learning('{self.actor_name}', '{self.state.loop_id}')")
+        
+        # Finalize session if not already done
+        if self.session_manager.current_session and not self.session_manager.current_session.completed_at:
+            self._finalize_learning_session()
         
         return self._generate_summary()
     
@@ -748,6 +760,7 @@ class CognitiveLoop:
             self._log(f"   Completed {len(completed_topics)} topics")
             self._log(f"   Remaining in queue: {len(topic_queue)}")
             if self.state:
+                self._finalize_learning_session()  # Save any ongoing session
                 self._save_state()
     
     def _phase_search(self):
@@ -886,14 +899,48 @@ class CognitiveLoop:
             self.state.phase = LoopPhase.THINK
             return
         
-        # For now, we simulate study by extracting key info via LLM
-        # In full implementation, this would download and parse PDFs
+        # Check if PDF fetching is enabled and available
+        use_pdf = self.config.get('fetch_pdfs', True)
         
-        for i, paper in enumerate(self.state.selected_papers[:3]):  # Limit for demo
+        if use_pdf:
+            try:
+                from src.actions.study_processor import StudyProcessor, HAS_PDF_FETCHER
+                if HAS_PDF_FETCHER:
+                    self._log("   📄 PDF fetching enabled - will try to get full papers")
+                else:
+                    self._log("   ⚠️ PDF fetcher not available - using abstracts only")
+                    use_pdf = False
+            except ImportError:
+                use_pdf = False
+        
+        study_config = {
+            'extraction_targets': [
+                {'type': 'concept', 'description': 'Key concepts and definitions'},
+                {'type': 'method', 'description': 'Methods and approaches'},
+                {'type': 'finding', 'description': 'Key findings and results'},
+                {'type': 'application', 'description': 'Practical applications'}
+            ],
+            'focus_areas': [self.state.topic, self.state.goal],
+            'generate_summary': True,
+            'analyze_enlightenment': True
+        }
+        
+        for i, paper in enumerate(self.state.selected_papers[:self.config.get('max_papers_to_study', 3)]):
             self._log(f"\n   [{i+1}] Studying: {paper.get('title', 'Unknown')[:60]}...")
             
-            # Simulate extraction from paper abstract/title
-            study_result = self._simulate_paper_study(paper)
+            if use_pdf:
+                # Try full PDF study
+                try:
+                    processor = StudyProcessor(self.actor_name)
+                    study_result = processor.study_from_url(paper, study_config)
+                    content_source = study_result.get('paper', {}).get('content_source', 'unknown')
+                    self._log(f"       Content source: {content_source}")
+                except Exception as e:
+                    self._log(f"       ⚠️ PDF study failed: {e}")
+                    study_result = self._simulate_paper_study(paper)
+            else:
+                # Fallback to simulated study from title/metadata
+                study_result = self._simulate_paper_study(paper)
             
             self.state.studied_papers.append({
                 "paper": paper,
@@ -901,26 +948,34 @@ class CognitiveLoop:
                 "studied_at": datetime.now().isoformat()
             })
             
-            # Collect knowledge bits and notes
-            knowledge_bits = study_result.get('knowledge_bits', [])
+            # Extract knowledge bits based on result format
+            if 'extraction' in study_result:
+                # New format from StudyProcessor
+                knowledge_bits = study_result.get('extraction', {}).get('knowledge_bits', [])
+                notes = study_result.get('study_notes', {})
+                questions = study_result.get('extraction', {}).get('questions_raised', [])
+            else:
+                # Old format from simulate_paper_study
+                knowledge_bits = study_result.get('knowledge_bits', [])
+                notes = study_result.get('notes', {})
+                questions = study_result.get('questions', [])
+            
             self.state.knowledge_bits.extend(knowledge_bits)
             
-            if study_result.get('notes'):
-                self.state.study_notes.append(study_result['notes'])
+            if notes:
+                self.state.study_notes.append(notes)
             
-            # Collect questions
-            self.state.emerging_questions.extend(study_result.get('questions', []))
+            self.state.emerging_questions.extend(questions)
             
             # Record in learning session for LoRA
             if self.config.get('save_session', True) and self.session_manager.current_session:
-                notes = study_result.get('notes', {})
                 self.session_manager.record_study_note(
                     title=paper.get('title', 'Unknown'),
-                    url=paper.get('link', ''),
+                    url=paper.get('link', paper.get('url', '')),
                     source_type='paper',
-                    key_points=notes.get('key_concepts', []),
-                    summary=notes.get('summary', ''),
-                    questions=study_result.get('questions', []),
+                    key_points=notes.get('key_concepts', []) if isinstance(notes, dict) else [],
+                    summary=notes.get('summary', notes.get('paper_summary', '')) if isinstance(notes, dict) else '',
+                    questions=questions,
                     relevance=0.7 if paper.get('citation_count', 0) > 50 else 0.5
                 )
                 

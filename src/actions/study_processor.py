@@ -15,6 +15,13 @@ from src.utils.chat_utils import get_chat_completion
 from src.utils.paper_parser import paper_parser
 from src.utils.knowledge_base import KnowledgeBase
 
+# Optional PDF fetching support
+try:
+    from src.utils.pdf_fetcher import PaperContentExtractor, PDFFetcher
+    HAS_PDF_FETCHER = True
+except ImportError:
+    HAS_PDF_FETCHER = False
+
 
 EXTRACTION_PROMPT = """You are a meticulous academic researcher extracting knowledge from a paper/article.
 
@@ -327,6 +334,301 @@ class StudyProcessor:
         
         return result
     
+    def study_from_url(self, paper_info: Dict, study_config: Dict) -> Dict:
+        """
+        Study a paper by fetching its PDF from a URL.
+        
+        Args:
+            paper_info: Paper metadata dict with keys like 'url', 'title', 'abstract', 'doi'
+            study_config: Study configuration from schedule
+        
+        Returns:
+            Complete study result with notes and knowledge bits
+        """
+        if not HAS_PDF_FETCHER:
+            # Fallback to abstract-only study
+            print(f"\n📖 Studying (abstract only - PDF fetcher not available): {paper_info.get('title', 'Unknown')}")
+            return self._study_abstract_only(paper_info, study_config)
+        
+        title = paper_info.get('title', 'Unknown Paper')
+        print(f"\n📖 Studying: {title}")
+        
+        # Try to fetch full PDF content
+        extractor = PaperContentExtractor()
+        extracted = extractor.extract_from_paper(paper_info)
+        
+        if extracted['success'] and extracted.get('metadata', {}).get('content_source') == 'full_pdf':
+            print(f"   ✅ Full PDF obtained ({extracted['metadata'].get('word_count', 0)} words)")
+            return self._study_extracted_content(extracted, paper_info, study_config)
+        else:
+            # Fallback to abstract
+            if extracted.get('error'):
+                print(f"   ⚠️ {extracted['error']}")
+            return self._study_abstract_only(paper_info, study_config)
+    
+    def _study_extracted_content(self, extracted: Dict, paper_info: Dict, study_config: Dict) -> Dict:
+        """
+        Study from extracted PDF content.
+        """
+        print(f"   Parsing {len(extracted.get('chunks', []))} chunks...")
+        
+        all_bits = []
+        chunk_summaries = []
+        all_questions = []
+        
+        extraction_targets = "\n".join([
+            f"- {t['type']}: {t['description']}" 
+            for t in study_config.get('extraction_targets', [])
+        ])
+        focus_areas = ", ".join(study_config.get('focus_areas', ['key concepts']))
+        
+        chunks = extracted.get('chunks', [])
+        
+        for i, chunk in enumerate(chunks):
+            print(f"   Processing chunk {i+1}/{len(chunks)}...")
+            
+            prompt = EXTRACTION_PROMPT.format(
+                chunk_num=i+1,
+                total_chunks=len(chunks),
+                content=chunk[:8000],
+                extraction_targets=extraction_targets,
+                focus_areas=focus_areas
+            )
+            
+            response = get_chat_completion([
+                {"role": "system", "content": "You are a knowledge extraction assistant. Always respond with valid JSON."},
+                {"role": "user", "content": prompt}
+            ], temperature=0.3)
+            
+            try:
+                chunk_result = self._parse_json_response(response)
+                
+                for bit in chunk_result.get('knowledge_bits', []):
+                    bit['source_url'] = paper_info.get('url', '')
+                    bit['source_title'] = paper_info.get('title', '')
+                    bit['source_chunk'] = i + 1
+                    bit['extracted_at'] = datetime.now().isoformat()
+                    bit['bit_id'] = str(uuid.uuid4())[:8]
+                    all_bits.append(bit)
+                
+                if chunk_result.get('chunk_summary'):
+                    chunk_summaries.append(f"Chunk {i+1}: {chunk_result['chunk_summary']}")
+                
+                all_questions.extend(chunk_result.get('questions_raised', []))
+                
+            except Exception as e:
+                print(f"   ⚠️ Error processing chunk {i+1}: {e}")
+                continue
+        
+        print(f"   Extracted {len(all_bits)} knowledge bits from full PDF")
+        
+        # Synthesize notes
+        study_notes = None
+        if study_config.get('generate_summary', True) and all_bits:
+            print("   Synthesizing study notes...")
+            study_notes = self._synthesize_notes(
+                paper_name=paper_info.get('title', 'Unknown'),
+                file_path=paper_info.get('url', ''),
+                all_bits=all_bits,
+                chunk_summaries=chunk_summaries,
+                questions=all_questions
+            )
+        
+        # Enlightenment analysis
+        enlightenment = None
+        if study_config.get('analyze_enlightenment', True) and study_notes:
+            print("   💡 Analyzing enlightenment...")
+            enlightenment = self._analyze_enlightenment(
+                paper_name=paper_info.get('title', 'Unknown'),
+                study_notes=study_notes,
+                all_bits=all_bits
+            )
+            if enlightenment:
+                category = enlightenment.get('enlightenment_category', 'UNKNOWN')
+                score = enlightenment.get('value_score', '?')
+                emoji = {
+                    'CONFIRMS': '✅', 'EXPANDS': '🌱', 'CHALLENGES': '⚡',
+                    'REVOLUTIONARY': '🚀', 'LOW_VALUE': '📉'
+                }.get(category, '❓')
+                print(f"   {emoji} Enlightenment: {category} (value: {score}/10)")
+        
+        return {
+            "study_id": str(uuid.uuid4()),
+            "studied_at": datetime.now().isoformat(),
+            "paper": {
+                "title": paper_info.get('title', 'Unknown'),
+                "url": paper_info.get('url', ''),
+                "authors": paper_info.get('authors', []),
+                "year": paper_info.get('year'),
+                "abstract": paper_info.get('abstract', ''),
+                "doi": paper_info.get('doi'),
+                "content_source": "full_pdf",
+                "pdf_path": extracted.get('metadata', {}).get('pdf_path'),
+                "metadata": extracted.get('metadata', {})
+            },
+            "extraction": {
+                "total_chunks": len(chunks),
+                "knowledge_bits": all_bits,
+                "chunk_summaries": chunk_summaries,
+                "questions_raised": list(set(all_questions))
+            },
+            "study_notes": study_notes,
+            "enlightenment": enlightenment,
+            "config_used": {
+                "depth": study_config.get('depth', 'standard'),
+                "focus_areas": study_config.get('focus_areas', [])
+            }
+        }
+    
+    def _study_abstract_only(self, paper_info: Dict, study_config: Dict) -> Dict:
+        """
+        Study using only the paper's abstract when PDF is unavailable.
+        """
+        abstract = paper_info.get('abstract', '')
+        title = paper_info.get('title', 'Unknown')
+        
+        if not abstract:
+            print(f"   ⚠️ No abstract available for: {title}")
+            return {
+                "study_id": str(uuid.uuid4()),
+                "studied_at": datetime.now().isoformat(),
+                "paper": {
+                    "title": title,
+                    "url": paper_info.get('url', ''),
+                    "content_source": "none",
+                    "error": "No content available"
+                },
+                "extraction": {"knowledge_bits": [], "questions_raised": []},
+                "study_notes": None,
+                "enlightenment": None
+            }
+        
+        print(f"   📝 Studying from abstract ({len(abstract)} chars)")
+        
+        extraction_targets = "\n".join([
+            f"- {t['type']}: {t['description']}" 
+            for t in study_config.get('extraction_targets', [])
+        ])
+        focus_areas = ", ".join(study_config.get('focus_areas', ['key concepts']))
+        
+        # Enhanced prompt for abstract-only study
+        prompt = f"""You are extracting knowledge from a paper abstract.
+
+PAPER TITLE: {title}
+
+ABSTRACT:
+{abstract}
+
+AUTHORS: {', '.join(paper_info.get('authors', []))}
+YEAR: {paper_info.get('year', 'Unknown')}
+CITATIONS: {paper_info.get('citations', 'Unknown')}
+
+EXTRACTION TARGETS:
+{extraction_targets}
+
+FOCUS AREAS: {focus_areas}
+
+Since we only have the abstract, extract the most important knowledge bits available.
+Be aware that abstracts contain condensed information - extract key claims, methods mentioned, and findings.
+
+Return a JSON object:
+{{
+    "knowledge_bits": [
+        {{
+            "title": "string",
+            "type": "concept|method|finding|application|claim",
+            "description": "string",
+            "key_terms": ["term1", "term2"],
+            "confidence": "high|medium|low",
+            "source_note": "from abstract"
+        }}
+    ],
+    "abstract_summary": "1-2 sentence core summary",
+    "main_claim": "the paper's main claim or contribution",
+    "methodology_hint": "methodology mentioned (if any)",
+    "questions_raised": ["question needing full paper to answer"],
+    "relevance_assessment": "high|medium|low with reason"
+}}
+"""
+        
+        response = get_chat_completion([
+            {"role": "system", "content": "You are a knowledge extraction assistant. Extract insights from paper abstracts. Always respond with valid JSON."},
+            {"role": "user", "content": prompt}
+        ], temperature=0.3)
+        
+        try:
+            result = self._parse_json_response(response)
+            
+            all_bits = []
+            for bit in result.get('knowledge_bits', []):
+                bit['source_url'] = paper_info.get('url', '')
+                bit['source_title'] = title
+                bit['source_type'] = 'abstract'
+                bit['extracted_at'] = datetime.now().isoformat()
+                bit['bit_id'] = str(uuid.uuid4())[:8]
+                all_bits.append(bit)
+            
+            print(f"   Extracted {len(all_bits)} knowledge bits from abstract")
+            
+            # Create study notes from abstract analysis
+            study_notes = {
+                "paper_summary": result.get('abstract_summary', ''),
+                "main_contributions": [result.get('main_claim', '')] if result.get('main_claim') else [],
+                "methodology_notes": result.get('methodology_hint', ''),
+                "key_concepts": [{"concept": t, "from": "abstract"} for bit in all_bits for t in bit.get('key_terms', [])[:2]],
+                "relevance": result.get('relevance_assessment', ''),
+                "note": "Based on abstract only - full paper analysis requires PDF access"
+            }
+            
+            # Simplified enlightenment for abstract
+            enlightenment = None
+            if study_config.get('analyze_enlightenment', True) and all_bits:
+                enlightenment = self._analyze_enlightenment(
+                    paper_name=title,
+                    study_notes=study_notes,
+                    all_bits=all_bits
+                )
+                if enlightenment:
+                    category = enlightenment.get('enlightenment_category', 'UNKNOWN')
+                    print(f"   💡 Enlightenment (from abstract): {category}")
+            
+            return {
+                "study_id": str(uuid.uuid4()),
+                "studied_at": datetime.now().isoformat(),
+                "paper": {
+                    "title": title,
+                    "url": paper_info.get('url', ''),
+                    "authors": paper_info.get('authors', []),
+                    "year": paper_info.get('year'),
+                    "abstract": abstract,
+                    "doi": paper_info.get('doi'),
+                    "content_source": "abstract_only"
+                },
+                "extraction": {
+                    "total_chunks": 1,
+                    "knowledge_bits": all_bits,
+                    "chunk_summaries": [result.get('abstract_summary', '')],
+                    "questions_raised": result.get('questions_raised', [])
+                },
+                "study_notes": study_notes,
+                "enlightenment": enlightenment,
+                "config_used": {
+                    "depth": "abstract_only",
+                    "focus_areas": study_config.get('focus_areas', [])
+                }
+            }
+            
+        except Exception as e:
+            print(f"   ⚠️ Error studying abstract: {e}")
+            return {
+                "study_id": str(uuid.uuid4()),
+                "studied_at": datetime.now().isoformat(),
+                "paper": {"title": title, "url": paper_info.get('url', ''), "content_source": "error"},
+                "extraction": {"knowledge_bits": [], "error": str(e)},
+                "study_notes": None,
+                "enlightenment": None
+            }
+
     def _synthesize_notes(self, paper_name: str, file_path: str, 
                           all_bits: List[Dict], chunk_summaries: List[str],
                           questions: List[str]) -> Optional[Dict]:
