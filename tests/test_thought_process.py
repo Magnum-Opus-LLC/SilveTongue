@@ -6,14 +6,14 @@ from pathlib import Path
 # Add src to python path
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
 
-from thoughts.subconscious import LingkuiSubconscious
-from thoughts.conscious import LingkuiConscious
+from thoughts.subconscious import SilvertongueSubconscious
+from thoughts.conscious import SilvertongueConscious
 
 class TestThoughtProcess(unittest.TestCase):
     def setUp(self):
         self.mock_kb = MagicMock()
-        self.subconscious = LingkuiSubconscious(self.mock_kb)
-        self.conscious = LingkuiConscious(self.mock_kb)
+        self.subconscious = SilvertongueSubconscious(self.mock_kb)
+        self.conscious = SilvertongueConscious(self.mock_kb)
 
     def test_generate_subconscious_prompt(self):
         self.mock_kb.get_values.return_value = ["Value1"]

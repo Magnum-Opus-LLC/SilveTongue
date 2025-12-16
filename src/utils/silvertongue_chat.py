@@ -1,7 +1,7 @@
 """
-Lingkui Chat Interface
+Silvertongue Chat Interface
 
-Direct conversation with the Lingkui agent, using its accumulated knowledge,
+Direct conversation with the Silvertongue agent, using its accumulated knowledge,
 principles, and experiences to inform responses.
 
 The agent maintains its character and draws from:
@@ -55,9 +55,9 @@ INSTRUCTIONS:
 Engage in natural conversation while staying true to your character and knowledge."""
 
 
-class LingkuiChat:
+class SilvertongueChat:
     """
-    Interactive chat interface with the Lingkui agent.
+    Interactive chat interface with the Silvertongue agent.
     """
     
     def __init__(self, actor_name: str = "student"):
@@ -215,10 +215,10 @@ class LingkuiChat:
 
 def interactive_chat(actor_name: str = "student"):
     """
-    Run an interactive chat session with Lingkui.
+    Run an interactive chat session with Silvertongue.
     """
     print("\n" + "=" * 60)
-    print(f"💬 CHAT WITH LINGKUI ({actor_name})")
+    print(f"💬 CHAT WITH SILVERTONGUE ({actor_name})")
     print("=" * 60)
     print("""
 Commands:
@@ -231,7 +231,7 @@ Commands:
     """)
     print("-" * 60)
     
-    chat = LingkuiChat(actor_name)
+    chat = SilvertongueChat(actor_name)
     
     print(f"\n🧠 {actor_name} is ready to chat!\n")
     
@@ -299,8 +299,8 @@ Commands:
 
 
 # Convenience function
-def chat_with_lingkui(actor_name: str = "student"):
-    """Start a chat session with Lingkui."""
+def chat_with_silvertongue(actor_name: str = "student"):
+    """Start a chat session with Silvertongue."""
     interactive_chat(actor_name)
 
 

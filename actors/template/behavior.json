@@ -1,5 +1,5 @@
 {
-  "description": "Defines the structural behavior and cognitive architecture of the Lingkui actor.",
+  "description": "Defines the structural behavior and cognitive architecture of the Silvertongue actor.",
   "identity": {
     "source": "actor/characteristic/value/values.yaml",
     "mechanism": "Core values are injected into the system prompt to define the agent's character and ensure consistent behavior across all interactions."

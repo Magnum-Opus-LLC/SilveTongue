@@ -7,9 +7,9 @@ from pathlib import Path
 class DatabaseManager:
     def __init__(self, db_path=None):
         if db_path is None:
-            # Default to data/lingkui.db in the project root
+            # Default to data/silvertongue.db in the project root
             project_root = Path(__file__).parent.parent
-            self.db_path = project_root / 'data' / 'lingkui.db'
+            self.db_path = project_root / 'data' / 'silvertongue.db'
         else:
             self.db_path = Path(db_path)
 

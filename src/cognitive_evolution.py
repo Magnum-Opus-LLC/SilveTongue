@@ -2,7 +2,7 @@
 """
 Cognitive Evolution - Autonomous Learning Agent
 
-This is the main entry point for running the Lingkui cognitive learning system.
+This is the main entry point for running the Silvertongue cognitive learning system.
 The agent autonomously:
 1. Searches for academic papers on a topic
 2. Fetches and reads full PDFs when available
@@ -24,7 +24,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.actions.cognitive_loop import CognitiveLoop, learn, learn_nonstop, run_forever
-from src.utils.lingkui_chat import interactive_chat as chat_with_lingkui
+from src.utils.silvertongue_chat import interactive_chat as chat_with_silvertongue
 
 # Global variable to store selected actor
 SELECTED_ACTOR = None
@@ -101,7 +101,7 @@ def show_banner():
     print("""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                                                                      ║
-║         🧠 LINGKUI COGNITIVE EVOLUTION - Learning Agent 🧠           ║
+║      🧠 SILVERTONGUE COGNITIVE EVOLUTION - Learning Agent 🧠        ║
 ║                                                                      ║
 ║     ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐          ║
 ║     │ SEARCH  │ → │  STUDY  │ → │  THINK  │ → │ REFLECT │          ║
@@ -412,8 +412,8 @@ def main():
     print("  4. 🔄 Non-Stop Mode (until goal achieved)")
     print("  5. 🌀 Forever Mode (runs indefinitely)")
     print("  6. 🚀 Fast Mode (abstracts only, no PDF)")
-    print("  7. 💬 Chat with Lingkui")
-    print("  8. 📚 View Saved Sessions")
+    print("  7. 💬 Chat with Silvertongue")
+    print("  8. 📚 View Saved Sessions"))
     print("  9. 🔄 Change Actor")
     print("  0. 🚪 Exit")
     
@@ -436,7 +436,7 @@ def main():
     elif choice == "6":
         demo_no_pdf_mode()
     elif choice == "7":
-        chat_with_lingkui(SELECTED_ACTOR)
+        chat_with_silvertongue(SELECTED_ACTOR)
     elif choice == "8":
         view_learning_sessions()
     elif choice == "9":

@@ -1,5 +1,5 @@
 """
-Lingkui Dashboard - Web interface for managing actors and cognitive loops.
+Silvertongue Dashboard - Web interface for managing actors and cognitive loops.
 
 Reads configuration from config.json including array_dir path.
 """

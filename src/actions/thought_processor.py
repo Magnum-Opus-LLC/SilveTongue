@@ -1,13 +1,13 @@
-from src.thoughts.subconscious import LingkuiSubconscious
-from src.thoughts.conscious import LingkuiConscious
+from src.thoughts.subconscious import SilvertongueSubconscious
+from src.thoughts.conscious import SilvertongueConscious
 from src.utils.knowledge_base import KnowledgeBase
 from src.utils.research import researcher
 
 class ThoughtProcessor:
     def __init__(self, actor_name='template'):
         self.kb = KnowledgeBase(actor_name)
-        self.subconscious = LingkuiSubconscious(self.kb)
-        self.conscious = LingkuiConscious(self.kb)
+        self.subconscious = SilvertongueSubconscious(self.kb)
+        self.conscious = SilvertongueConscious(self.kb)
 
     def process(self, user_input):
         # 1. Subconscious Analysis

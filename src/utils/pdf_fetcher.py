@@ -326,7 +326,7 @@ class PDFFetcher:
                 config = load_config()
                 cache_dir = Path(config.get('array_dir', '')) / "data" / "pdf_cache"
             except Exception:
-                cache_dir = Path(tempfile.gettempdir()) / "lingkui_pdf_cache"
+                cache_dir = Path(tempfile.gettempdir()) / "silvertongue_pdf_cache"
         
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)

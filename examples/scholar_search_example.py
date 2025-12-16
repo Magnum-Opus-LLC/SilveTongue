@@ -1,7 +1,7 @@
 """
 Scholar Search Example
 
-Demonstrates how to use Lingkui's Google Scholar search capabilities.
+Demonstrates how to use Silvertongue's Google Scholar search capabilities.
 
 Usage:
     python examples/scholar_search_example.py "your search query"
@@ -92,7 +92,7 @@ def demo_survey(query: str):
 def demo_researcher_integration(query: str):
     """Using the integrated ResearchManager."""
     print(f"\n{'='*60}")
-    print(f"🧠 Lingkui Research Manager: {query}")
+    print(f"🧠 Silvertongue Research Manager: {query}")
     print('='*60)
     
     # Combined web + scholar search

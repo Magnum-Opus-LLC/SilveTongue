@@ -1,5 +1,5 @@
 """
-Lingkui - Cognitive AI Agent Framework
+Silvertongue - Cognitive AI Agent Framework
 
 Structure:
 - utils/: Helper functions and utilities (chat, knowledge_base, research, actor_generator)
@@ -12,7 +12,7 @@ The Cognitive Loop Manifesto:
 """
 
 from src.utils import KnowledgeBase, kb, get_chat_completion, researcher
-from src.thoughts import LingkuiConscious, LingkuiSubconscious
+from src.thoughts import SilvertongueConscious, SilvertongueSubconscious
 from src.actions import (
     ThoughtProcessor, 
     LearningScheduleRunner,
@@ -35,8 +35,8 @@ __all__ = [
     'researcher',
     
     # Cognitive Components
-    'LingkuiConscious',
-    'LingkuiSubconscious',
+    'SilvertongueConscious',
+    'SilvertongueSubconscious',
     'ThoughtProcessor',
     
     # Cognitive Loop (The Manifesto)

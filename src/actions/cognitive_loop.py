@@ -1,7 +1,7 @@
 """
 Cognitive Loop - The Manifesto
 
-A unified cognitive architecture that orchestrates Lingkui's complete learning cycle:
+A unified cognitive architecture that orchestrates Silvertongue's complete learning cycle:
 
     ┌──────────────────────────────────────────────────────────────────┐
     │                    THE COGNITIVE LOOP                             │
@@ -46,8 +46,8 @@ from src.utils.knowledge_base import KnowledgeBase
 from src.utils.chat_utils import get_chat_completion
 from src.utils.research import ResearchManager
 from src.utils.learning_session import LearningSessionManager
-from src.thoughts.conscious import LingkuiConscious
-from src.thoughts.subconscious import LingkuiSubconscious
+from src.thoughts.conscious import SilvertongueConscious
+from src.thoughts.subconscious import SilvertongueSubconscious
 from src.actions.study_processor import StudyProcessor
 from src.actions.learning_scheduler import LearningScheduleRunner
 from src.scholar_search import ScholarSearcher, ScholarPaper
@@ -373,7 +373,7 @@ Return JSON:
 
 class CognitiveLoop:
     """
-    The Cognitive Loop - Lingkui's autonomous learning engine.
+    The Cognitive Loop - Silvertongue's autonomous learning engine.
     
     Orchestrates the complete learning cycle:
     Search → Study → Think → Reflect → Update → Expand → (repeat)
@@ -412,8 +412,8 @@ class CognitiveLoop:
         
         # Initialize components
         self.kb = KnowledgeBase(actor_name)
-        self.conscious = LingkuiConscious(self.kb)
-        self.subconscious = LingkuiSubconscious(self.kb)
+        self.conscious = SilvertongueConscious(self.kb)
+        self.subconscious = SilvertongueSubconscious(self.kb)
         self.study_processor = StudyProcessor(actor_name)
         self.schedule_runner = LearningScheduleRunner(actor_name)
         self.scholar = ScholarSearcher()

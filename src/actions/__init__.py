@@ -1,5 +1,5 @@
 """
-Lingkui Actions Module
+Silvertongue Actions Module
 
 Contains the execution components:
 - thought_processor: Main orchestrator for the cognitive loop

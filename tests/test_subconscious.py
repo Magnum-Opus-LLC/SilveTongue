@@ -6,14 +6,14 @@ from pathlib import Path
 # Add src to python path
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
 
-from thoughts.subconscious import LingkuiSubconscious
+from thoughts.subconscious import SilvertongueSubconscious
 
 
-class TestLingkuiSubconscious(unittest.TestCase):
+class TestSilvertongueSubconscious(unittest.TestCase):
     def setUp(self):
         # Mock the knowledge base passed to the agent
         self.mock_kb = MagicMock()
-        self.agent = LingkuiSubconscious(knowledge_base=self.mock_kb)
+        self.agent = SilvertongueSubconscious(knowledge_base=self.mock_kb)
 
     def test_get_character_prompt(self):
         self.mock_kb.get_values.return_value = ["Integrity", "Curiosity"]
@@ -46,7 +46,7 @@ class TestLingkuiSubconscious(unittest.TestCase):
         self.assertIn("Physics", prompt)
 
     @patch('thoughts.subconscious.get_chat_completion')
-    @patch('thoughts.subconscious.LingkuiSubconscious.classify_information')
+    @patch('thoughts.subconscious.SilvertongueSubconscious.classify_information')
     def test_process_content(self, mock_classify, mock_chat):
         mock_classify.return_value = "Biology"
         mock_chat.return_value = "Analysis Result"

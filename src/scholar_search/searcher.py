@@ -1,7 +1,7 @@
 """
 Scholar Searcher - Unified interface for Google Scholar searches
 
-Provides a high-level interface for Lingkui to search academic literature,
+Provides a high-level interface for Silvertongue to search academic literature,
 analyze results, and integrate with the learning system.
 
 NOTE: Uses direct HTTP requests (no proxy required) to avoid rate limiting issues.

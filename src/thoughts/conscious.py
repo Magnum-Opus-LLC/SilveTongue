@@ -5,7 +5,7 @@ from pathlib import Path
 from src.utils.knowledge_base import kb
 from src.utils.chat_utils import get_chat_completion
 
-class LingkuiConscious:
+class SilvertongueConscious:
     def __init__(self, knowledge_base=None):
         self.kb = knowledge_base if knowledge_base else kb
 
@@ -19,7 +19,7 @@ class LingkuiConscious:
         
         principles = self.kb.get_principles()
         
-        prompt = f"You are the Conscious Mind of Lingkui, operating in the domain of {domain}.\n\n"
+        prompt = f"You are the Conscious Mind of Silvertongue, operating in the domain of {domain}.\n\n"
         
         prompt += "Principles:\n" + "\n".join(f"- {p}" for p in principles) + "\n\n"
         

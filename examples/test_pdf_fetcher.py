@@ -6,7 +6,7 @@ Quick test to verify Puppeteer-based PDF fetching works.
 """
 
 import sys
-sys.path.insert(0, '/Volumes/ext_disk/LLM_Projects/lingkui')
+sys.path.insert(0, '/Volumes/ext_disk/LLM_Projects/silvertongue')
 
 from src.utils.pdf_fetcher import PDFFetcher, PaperContentExtractor
 

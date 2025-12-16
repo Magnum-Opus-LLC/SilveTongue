@@ -3,7 +3,7 @@ from src.utils.knowledge_base import kb
 from src.utils.chat_utils import get_chat_completion
 
 
-class LingkuiSubconscious:
+class SilvertongueSubconscious:
     def __init__(self, knowledge_base=None):
         self.kb = knowledge_base if knowledge_base else kb
 
@@ -27,7 +27,7 @@ class LingkuiSubconscious:
         adjustments = self.kb.get_adjustments()
         core_knowledge = self.kb.get_core_knowledge()
 
-        prompt = "You are the Subconscious of Lingkui.\n\n"
+        prompt = "You are the Subconscious of Silvertongue.\n\n"
         prompt += "Values:\n" + "\n".join(f"- {v}" for v in values) + "\n\n"
         prompt += "Principles:\n" + "\n".join(f"- {p}" for p in principles) + "\n\n"
         prompt += "Adjustments:\n" + "\n".join(f"- {a}" for a in adjustments) + "\n\n"
@@ -43,7 +43,7 @@ class LingkuiSubconscious:
         subconscious_prompt = self.generate_subconscious_prompt()
         
         validation_prompt = (
-            "You are the Subconscious of Lingkui. Your role is to ensure all actions align with your core values and principles.\n"
+            "You are the Subconscious of Silvertongue. Your role is to ensure all actions align with your core values and principles.\n"
             "Review the proposed thought/plan below.\n"
             "1. Does it violate any core values?\n"
             "2. Is it consistent with your principles?\n"

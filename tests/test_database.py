@@ -15,7 +15,7 @@ class TestDatabaseManager(unittest.TestCase):
     def setUp(self):
         # Use a temporary directory for testing
         self.test_dir = tempfile.TemporaryDirectory()
-        self.test_db_path = Path(self.test_dir.name) / 'test_lingkui.db'
+        self.test_db_path = Path(self.test_dir.name) / 'test_silvertongue.db'
         self.db = DatabaseManager(db_path=self.test_db_path)
 
     def tearDown(self):

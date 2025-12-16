@@ -81,7 +81,11 @@ class KnowledgeEvolutionAnalyzer:
             if re.search(pattern, text_lower):
                 match = re.search(pattern, text_lower)
                 if match:
-                    topics.add(match.group().replace('s', '').strip())
+                    # Remove trailing 's' for singular form (not all 's' characters)
+                    topic = match.group().strip()
+                    if topic.endswith('s') and not topic.endswith('ss'):
+                        topic = topic[:-1]
+                    topics.add(topic)
         
         return topics
     

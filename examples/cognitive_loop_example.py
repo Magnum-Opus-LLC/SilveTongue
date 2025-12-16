@@ -1,7 +1,7 @@
 """
 Cognitive Loop Example
 
-Demonstrates Lingkui's autonomous learning engine - the Cognitive Loop.
+Demonstrates Silvertongue's autonomous learning engine - the Cognitive Loop.
 
 The loop orchestrates:
     SEARCH → STUDY → THINK → REFLECT → UPDATE → EXPAND → (repeat)
@@ -37,7 +37,7 @@ def demo_full_learning():
     print("""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                                                                      ║
-║         🧠 LINGKUI COGNITIVE LOOP - AUTONOMOUS LEARNING 🧠          ║
+║       🧠 SILVERTONGUE COGNITIVE LOOP - AUTONOMOUS LEARNING 🧠       ║
 ║                                                                      ║
 ║     ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐          ║
 ║     │ SEARCH  │ → │  STUDY  │ → │  THINK  │ → │ REFLECT │          ║
@@ -287,9 +287,9 @@ def main():
     print("""
 ╭──────────────────────────────────────────────────────────────────────╮
 │                                                                      │
-│            🧠 LINGKUI COGNITIVE LOOP DEMONSTRATION 🧠                │
+│          🧠 SILVERTONGUE COGNITIVE LOOP DEMONSTRATION 🧠            │
 │                                                                      │
-│   The Cognitive Loop is Lingkui's autonomous learning engine.        │
+│   The Cognitive Loop is Silvertongue's autonomous learning engine.   │
 │   It orchestrates a continuous cycle of:                             │
 │                                                                      │
 │     1. SEARCH  - Discover relevant papers and resources              │

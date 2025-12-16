@@ -1,5 +1,5 @@
 """
-Lingkui Utilities Module
+Silvertongue Utilities Module
 
 Contains helper functions and classes:
 - chat_utils: OpenAI API wrapper
