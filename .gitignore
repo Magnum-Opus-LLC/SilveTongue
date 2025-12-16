@@ -9,6 +9,8 @@ data/
 data/**
 array/
 array/**
+array_bk/
+array_bk/**
 node_modules/
 node_modules/**
 package-lock.json
