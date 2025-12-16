@@ -1,4 +1,4 @@
-name: lingkui-env
+name: silvertongue
 channels:
     - defaults
 dependencies:
@@ -10,3 +10,4 @@ dependencies:
         - duckduckgo_search
         - beautifulsoup4
         - requests
+        - flask

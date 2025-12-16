@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lingkui Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .terminal-output {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .knowledge-card:hover { transform: translateY(-2px); }
+        .pulse-dot { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        /* Markdown styles for chat */
+        .markdown-content h1, .markdown-content h2, .markdown-content h3 { font-weight: 600; margin: 0.5em 0; }
+        .markdown-content h1 { font-size: 1.25em; }
+        .markdown-content h2 { font-size: 1.1em; }
+        .markdown-content h3 { font-size: 1em; }
+        .markdown-content p { margin: 0.5em 0; }
+        .markdown-content ul, .markdown-content ol { margin: 0.5em 0; padding-left: 1.5em; }
+        .markdown-content li { margin: 0.25em 0; }
+        .markdown-content code { background: rgba(0,0,0,0.3); padding: 0.15em 0.4em; border-radius: 4px; font-family: 'Monaco', 'Menlo', monospace; font-size: 0.9em; }
+        .markdown-content pre { background: rgba(0,0,0,0.4); padding: 1em; border-radius: 8px; overflow-x: auto; margin: 0.5em 0; }
+        .markdown-content pre code { background: none; padding: 0; }
+        .markdown-content blockquote { border-left: 3px solid #6b7280; padding-left: 1em; margin: 0.5em 0; color: #9ca3af; }
+        .markdown-content a { color: #a78bfa; text-decoration: underline; }
+        .markdown-content table { border-collapse: collapse; margin: 0.5em 0; }
+        .markdown-content th, .markdown-content td { border: 1px solid #4b5563; padding: 0.5em; }
+        .markdown-content hr { border: none; border-top: 1px solid #4b5563; margin: 1em 0; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <div id="app">
+        <!-- Header -->
+        <header class="bg-gray-800 border-b border-gray-700 px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <h1 class="text-2xl font-bold text-purple-400">🧠 Lingkui Dashboard</h1>
+                    <span class="text-sm text-gray-500">Cognitive AI Agent Framework</span>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <div class="text-sm text-gray-400" v-if="config.array_dir">
+                        <span class="text-gray-500">Array:</span> 
+                        <span class="text-cyan-400 font-mono text-xs">[[ config.array_dir ]]</span>
+                        <span v-if="config.array_exists" class="text-green-400 ml-1">✓</span>
+                        <span v-else class="text-red-400 ml-1">✗</span>
+                    </div>
+                    <div class="text-sm text-gray-400" v-if="config.model">
+                        Model: <span class="text-green-400">[[ config.model ]]</span>
+                    </div>
+                    <div class="text-sm text-gray-400" v-if="config.apiHost">
+                        API: <span class="text-blue-400">[[ config.apiHost ]]</span>
+                    </div>
+                    <button @click="showSettings = true" class="text-gray-400 hover:text-white transition-colors">
+                        ⚙️
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Settings Modal -->
+        <div v-if="showSettings" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-gray-800 rounded-xl p-6 w-[500px] shadow-2xl">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-semibold">⚙️ Configuration</h3>
+                    <button @click="showSettings = false" class="text-gray-400 hover:text-white">✕</button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Array Directory</label>
+                        <input 
+                            v-model="settingsForm.array_dir"
+                            type="text"
+                            placeholder="/path/to/array"
+                            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 font-mono text-sm"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Path where actor data is stored (from config.json)</p>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">API Host</label>
+                        <input 
+                            v-model="settingsForm.apiHost"
+                            type="text"
+                            placeholder="http://localhost:8355"
+                            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                        >
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Model</label>
+                        <input 
+                            v-model="settingsForm.model"
+                            type="text"
+                            placeholder="local-model"
+                            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                        >
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button @click="showSettings = false" class="px-4 py-2 text-gray-400 hover:text-white">
+                        Cancel
+                    </button>
+                    <button @click="saveSettings" class="bg-purple-600 hover:bg-purple-700 px-6 py-2 rounded-lg font-medium">
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex h-[calc(100vh-73px)]">
+            <!-- Sidebar - Actor List -->
+            <aside class="w-64 bg-gray-800 border-r border-gray-700 overflow-y-auto">
+                <div class="p-4">
+                    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Actors</h2>
+                    <div class="space-y-1">
+                        <button
+                            v-for="actor in actors"
+                            :key="actor"
+                            @click="selectActor(actor)"
+                            :class="[
+                                'w-full text-left px-3 py-2 rounded-lg transition-colors',
+                                selectedActor === actor 
+                                    ? 'bg-purple-600 text-white' 
+                                    : 'text-gray-300 hover:bg-gray-700'
+                            ]"
+                        >
+                            <span class="flex items-center">
+                                <span class="w-2 h-2 rounded-full mr-2" 
+                                      :class="selectedActor === actor ? 'bg-green-400' : 'bg-gray-500'"></span>
+                                [[ actor ]]
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="flex-1 overflow-y-auto">
+                <!-- No actor selected -->
+                <div v-if="!selectedActor" class="flex items-center justify-center h-full">
+                    <div class="text-center text-gray-500">
+                        <div class="text-6xl mb-4">🎭</div>
+                        <p class="text-xl">Select an actor to get started</p>
+                    </div>
+                </div>
+
+                <!-- Actor Dashboard -->
+                <div v-else class="p-6">
+                    <!-- Actor Header -->
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 class="text-3xl font-bold text-white">[[ selectedActor ]]</h2>
+                            <p class="text-gray-400 mt-1" v-if="actorDetails.mindset?.summary">
+                                [[ actorDetails.mindset.summary || 'No mindset summary' ]]
+                            </p>
+                        </div>
+                        <div class="flex space-x-3">
+                            <button @click="activeTab = 'chat'" 
+                                    :class="tabClass('chat')">
+                                💬 Chat
+                            </button>
+                            <button @click="activeTab = 'learn'" 
+                                    :class="tabClass('learn')">
+                                📚 Learn
+                            </button>
+                            <button @click="activeTab = 'knowledge'" 
+                                    :class="tabClass('knowledge')">
+                                🧠 Knowledge
+                            </button>
+                            <button @click="activeTab = 'history'" 
+                                    :class="tabClass('history')">
+                                📜 History
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Tab Content -->
+                    <div class="mt-6">
+                        <!-- Chat Tab -->
+                        <div v-show="activeTab === 'chat'" class="bg-gray-800 rounded-xl p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-lg font-semibold">Chat with [[ selectedActor ]]</h3>
+                                <div class="flex items-center space-x-4">
+                                    <label class="flex items-center space-x-2 text-sm">
+                                        <input type="checkbox" v-model="useCognitive" class="rounded bg-gray-700 border-gray-600 text-purple-600 focus:ring-purple-500">
+                                        <span class="text-gray-300">🧠 Cognitive Mode</span>
+                                    </label>
+                                    <button 
+                                        v-if="chatHistory.length > 0"
+                                        @click="chatHistory = []; thoughtProcess = null"
+                                        class="text-xs text-gray-400 hover:text-white"
+                                    >
+                                        Clear Chat
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="flex space-x-4">
+                                <!-- Chat Messages -->
+                                <div class="flex-1">
+                                    <div class="bg-gray-900 rounded-lg p-4 h-96 overflow-y-auto mb-4" ref="chatContainer">
+                                        <div v-if="chatHistory.length === 0" class="text-gray-500 text-center py-8">
+                                            <div v-if="useCognitive">
+                                                <p>🧠 Cognitive mode enabled</p>
+                                                <p class="text-xs mt-2">Messages will be processed through subconscious analysis, conscious reasoning, and action planning</p>
+                                            </div>
+                                            <div v-else>Start a conversation...</div>
+                                        </div>
+                                        <div v-for="(msg, idx) in chatHistory" :key="idx" class="mb-4">
+                                            <div :class="[
+                                                'max-w-[80%] p-3 rounded-lg',
+                                                msg.role === 'user' 
+                                                    ? 'bg-purple-600 ml-auto' 
+                                                    : 'bg-gray-700'
+                                            ]">
+                                                <div v-if="msg.role === 'user'" class="text-sm whitespace-pre-wrap">[[ msg.content ]]</div>
+                                                <div v-else class="text-sm markdown-content" v-html="renderMarkdown(msg.content)"></div>
+                                            </div>
+                                            <!-- Show cognitive badge if response was cognitive -->
+                                            <div v-if="msg.role === 'assistant' && msg.cognitive" class="text-xs text-purple-400 mt-1">
+                                                🧠 Cognitive response
+                                            </div>
+                                        </div>
+                                        <div v-if="chatLoading" class="flex items-center space-x-2 text-gray-400">
+                                            <div class="pulse-dot w-2 h-2 bg-purple-400 rounded-full"></div>
+                                            <span v-if="useCognitive">Processing through cognitive loop...</span>
+                                            <span v-else>Thinking...</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Chat Input -->
+                                    <div class="flex space-x-3">
+                                        <input 
+                                            v-model="chatInput"
+                                            @keyup.enter="sendChat"
+                                            type="text"
+                                            placeholder="Type your message..."
+                                            class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                                        >
+                                        <button 
+                                            @click="sendChat"
+                                            :disabled="chatLoading || !chatInput.trim()"
+                                            class="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-6 py-2 rounded-lg font-medium transition-colors"
+                                        >
+                                            Send
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Thought Process Panel (when cognitive mode is on) -->
+                                <div v-if="useCognitive && (thoughtProcess || chatLoading)" class="w-80 bg-gray-900 rounded-lg p-4 h-[460px] overflow-y-auto">
+                                    <h4 class="text-sm font-semibold mb-3 text-purple-400">🧠 Thought Process</h4>
+                                    
+                                    <div v-if="chatLoading && !thoughtProcess" class="text-gray-500 text-sm">
+                                        <div class="animate-pulse">Analyzing request...</div>
+                                    </div>
+                                    
+                                    <div v-if="thoughtProcess" class="space-y-3 text-xs">
+                                        <!-- Analysis -->
+                                        <div v-if="thoughtProcess.analysis" class="bg-gray-800 rounded p-2">
+                                            <div class="text-purple-300 font-medium mb-1">📊 Analysis</div>
+                                            <div class="text-gray-400">
+                                                <div v-if="thoughtProcess.analysis.domain">Domain: <span class="text-white">[[ thoughtProcess.analysis.domain ]]</span></div>
+                                                <div v-if="thoughtProcess.analysis.intent">Intent: <span class="text-white">[[ thoughtProcess.analysis.intent ]]</span></div>
+                                                <div v-if="thoughtProcess.analysis.complexity">Complexity: <span class="text-white">[[ thoughtProcess.analysis.complexity ]]</span></div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Thought History -->
+                                        <div v-if="thoughtProcess.thought_history?.length" class="space-y-2">
+                                            <div class="text-blue-300 font-medium">💭 Thought Steps</div>
+                                            <div v-for="(step, idx) in thoughtProcess.thought_history" :key="idx" 
+                                                 class="bg-gray-800 rounded p-2">
+                                                <div class="text-yellow-400">[[ step.step ]]</div>
+                                                <div class="text-gray-400 mt-1 truncate-3" :title="step.content">
+                                                    [[ truncate(step.content, 150) ]]
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Learn Tab -->
+                        <div v-show="activeTab === 'learn'" class="bg-gray-800 rounded-xl p-6">
+                            <h3 class="text-lg font-semibold mb-4">🧠 Cognitive Learning Loop</h3>
+                            
+                            <div class="grid grid-cols-2 gap-6">
+                                <!-- Learning Form -->
+                                <div class="space-y-4">
+                                    <!-- Topic & Goal -->
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-400 mb-1">📚 Topic</label>
+                                        <input 
+                                            v-model="learnTopic"
+                                            type="text"
+                                            placeholder="e.g., machine learning in chemical engineering"
+                                            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                                        >
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-400 mb-1">🎯 Goal</label>
+                                        <textarea 
+                                            v-model="learnGoal"
+                                            rows="2"
+                                            placeholder="Learning objective (optional - will auto-generate if empty)"
+                                            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                                        ></textarea>
+                                    </div>
+                                    
+                                    <!-- Search Settings -->
+                                    <div class="bg-gray-700 rounded-lg p-4">
+                                        <h4 class="text-sm font-medium text-gray-300 mb-3">🔍 Search Settings</h4>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label class="block text-xs text-gray-400 mb-1">Max Papers/Search</label>
+                                                <input 
+                                                    v-model.number="learnConfig.max_papers_per_search"
+                                                    type="number"
+                                                    min="5"
+                                                    max="50"
+                                                    class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                                                >
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs text-gray-400 mb-1">Papers to Study</label>
+                                                <input 
+                                                    v-model.number="learnConfig.max_papers_to_study"
+                                                    type="number"
+                                                    min="1"
+                                                    max="10"
+                                                    class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                                                >
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs text-gray-400 mb-1">Search Depth</label>
+                                                <input 
+                                                    v-model.number="learnConfig.search_depth"
+                                                    type="number"
+                                                    min="1"
+                                                    max="5"
+                                                    class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                                                >
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs text-gray-400 mb-1">Min Citations</label>
+                                                <input 
+                                                    v-model.number="learnConfig.min_citations"
+                                                    type="number"
+                                                    min="0"
+                                                    max="1000"
+                                                    class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                                                >
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs text-gray-400 mb-1">Year From</label>
+                                                <input 
+                                                    v-model.number="learnConfig.year_from"
+                                                    type="number"
+                                                    min="1990"
+                                                    max="2025"
+                                                    placeholder="Any"
+                                                    class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                                                >
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs text-gray-400 mb-1">Year To</label>
+                                                <input 
+                                                    v-model.number="learnConfig.year_to"
+                                                    type="number"
+                                                    min="1990"
+                                                    max="2025"
+                                                    placeholder="Any"
+                                                    class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                                                >
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Loop Settings -->
+                                    <div class="bg-gray-700 rounded-lg p-4">
+                                        <h4 class="text-sm font-medium text-gray-300 mb-3">⚙️ Loop Settings</h4>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label class="block text-xs text-gray-400 mb-1">Max Iterations</label>
+                                                <input 
+                                                    v-model.number="learnConfig.max_iterations"
+                                                    type="number"
+                                                    min="1"
+                                                    max="20"
+                                                    class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                                                >
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs text-gray-400 mb-1">Goal Threshold %</label>
+                                                <input 
+                                                    v-model.number="learnConfig.goal_threshold"
+                                                    type="number"
+                                                    min="50"
+                                                    max="100"
+                                                    class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                                                >
+                                            </div>
+                                        </div>
+                                        <div class="flex flex-wrap gap-4 mt-3">
+                                            <label class="flex items-center space-x-2 cursor-pointer">
+                                                <input type="checkbox" v-model="learnConfig.fetch_pdfs" class="rounded bg-gray-600 border-gray-500">
+                                                <span class="text-xs text-gray-400">📄 Fetch PDFs</span>
+                                            </label>
+                                            <label class="flex items-center space-x-2 cursor-pointer">
+                                                <input type="checkbox" v-model="learnConfig.save_session" class="rounded bg-gray-600 border-gray-500">
+                                                <span class="text-xs text-gray-400">💾 Save Session</span>
+                                            </label>
+                                            <label class="flex items-center space-x-2 cursor-pointer">
+                                                <input type="checkbox" v-model="learnConfig.auto_save" class="rounded bg-gray-600 border-gray-500">
+                                                <span class="text-xs text-gray-400">🔄 Auto-save</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Mode Selection -->
+                                    <div class="bg-gray-700 rounded-lg p-4">
+                                        <h4 class="text-sm font-medium text-gray-300 mb-3">🎮 Learning Mode</h4>
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <button 
+                                                @click="learnMode = 'standard'"
+                                                :class="['px-3 py-2 rounded text-xs font-medium transition-colors', learnMode === 'standard' ? 'bg-purple-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500']"
+                                            >
+                                                📖 Standard
+                                            </button>
+                                            <button 
+                                                @click="learnMode = 'nonstop'"
+                                                :class="['px-3 py-2 rounded text-xs font-medium transition-colors', learnMode === 'nonstop' ? 'bg-purple-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500']"
+                                            >
+                                                🔄 Non-Stop
+                                            </button>
+                                            <button 
+                                                @click="learnMode = 'quick'"
+                                                :class="['px-3 py-2 rounded text-xs font-medium transition-colors', learnMode === 'quick' ? 'bg-purple-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500']"
+                                            >
+                                                ⚡ Quick (1 iter)
+                                            </button>
+                                            <button 
+                                                @click="learnMode = 'fast'"
+                                                :class="['px-3 py-2 rounded text-xs font-medium transition-colors', learnMode === 'fast' ? 'bg-purple-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500']"
+                                            >
+                                                🚀 Fast (no PDF)
+                                            </button>
+                                        </div>
+                                        <p class="text-xs text-gray-500 mt-2">
+                                            <span v-if="learnMode === 'standard'">Standard learning with configurable iterations</span>
+                                            <span v-else-if="learnMode === 'nonstop'">Runs until goal threshold reached</span>
+                                            <span v-else-if="learnMode === 'quick'">Single iteration for quick exploration</span>
+                                            <span v-else-if="learnMode === 'fast'">Abstracts only, no PDF downloads</span>
+                                        </p>
+                                    </div>
+                                    
+                                    <!-- Start Button -->
+                                    <button 
+                                        @click="startLearning"
+                                        :disabled="learningActive || !learnTopic.trim()"
+                                        class="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 px-6 py-3 rounded-lg font-medium transition-colors"
+                                    >
+                                        <span v-if="!learningActive">🚀 Start Learning</span>
+                                        <span v-else>⏳ Learning in progress...</span>
+                                    </button>
+                                </div>
+                                
+                                <!-- Learning Output -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-400 mb-1">Output</label>
+                                    <div class="bg-gray-900 rounded-lg p-4 h-[500px] overflow-y-auto terminal-output" ref="learnOutput">
+                                        <div v-if="learnLogs.length === 0" class="text-gray-500">
+                                            Learning output will appear here...
+                                        </div>
+                                        <div v-for="(log, idx) in learnLogs" :key="idx" class="text-gray-300">
+                                            [[ log ]]
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Previous Loops -->
+                            <div class="mt-6">
+                                <h4 class="text-md font-medium mb-3">Previous Learning Loops</h4>
+                                <div class="grid grid-cols-3 gap-4">
+                                    <div v-for="loop in actorLoops" :key="loop.loop_id" 
+                                         class="bg-gray-700 rounded-lg p-4 hover:bg-gray-600 transition-colors cursor-pointer">
+                                        <div class="text-sm font-medium truncate">[[ loop.topic ]]</div>
+                                        <div class="text-xs text-gray-400 mt-1">
+                                            Phase: [[ loop.phase ]] | Papers: [[ loop.papers_studied ]]
+                                        </div>
+                                        <div class="text-xs text-gray-500 mt-1">[[ formatDate(loop.started_at) ]]</div>
+                                    </div>
+                                    <div v-if="actorLoops.length === 0" class="text-gray-500 col-span-3 text-center py-4">
+                                        No previous learning loops
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Knowledge Tab -->
+                        <div v-show="activeTab === 'knowledge'" class="space-y-6">
+                            <!-- Search Bar -->
+                            <div class="bg-gray-800 rounded-xl p-4">
+                                <div class="flex items-center space-x-4">
+                                    <div class="relative flex-1">
+                                        <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔍</span>
+                                        <input 
+                                            v-model="knowledgeSearch"
+                                            type="text"
+                                            placeholder="Search knowledge base..."
+                                            class="w-full bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-4 py-2 focus:outline-none focus:border-purple-500"
+                                        >
+                                    </div>
+                                    <select v-model="knowledgeFilter" class="bg-gray-700 border border-gray-600 rounded-lg px-4 py-2">
+                                        <option value="all">All Categories</option>
+                                        <option value="values">Values</option>
+                                        <option value="principles">Principles</option>
+                                        <option value="experiences">Experiences</option>
+                                        <option value="core_knowledge">Core Knowledge</option>
+                                        <option value="challenges">Challenges</option>
+                                    </select>
+                                    <span v-if="knowledgeSearch" class="text-sm text-gray-400">
+                                        [[ filteredKnowledgeCount ]] results
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Knowledge Stats -->
+                            <div class="grid grid-cols-4 gap-4">
+                                <div class="bg-gray-800 rounded-xl p-4 text-center knowledge-card transition-transform">
+                                    <div class="text-3xl font-bold text-purple-400">[[ actorDetails.principles?.length || 0 ]]</div>
+                                    <div class="text-sm text-gray-400">Principles</div>
+                                </div>
+                                <div class="bg-gray-800 rounded-xl p-4 text-center knowledge-card transition-transform">
+                                    <div class="text-3xl font-bold text-blue-400">[[ actorDetails.experiences?.length || 0 ]]</div>
+                                    <div class="text-sm text-gray-400">Experiences</div>
+                                </div>
+                                <div class="bg-gray-800 rounded-xl p-4 text-center knowledge-card transition-transform">
+                                    <div class="text-3xl font-bold text-green-400">[[ (actorDetails.core_knowledge?.length || 0) + (actorDetails.supporting_knowledge?.length || 0) ]]</div>
+                                    <div class="text-sm text-gray-400">Knowledge Items</div>
+                                </div>
+                                <div class="bg-gray-800 rounded-xl p-4 text-center knowledge-card transition-transform">
+                                    <div class="text-3xl font-bold text-yellow-400">[[ actorDetails.challenges?.length || 0 ]]</div>
+                                    <div class="text-sm text-gray-400">Challenges</div>
+                                </div>
+                            </div>
+
+                            <!-- Knowledge Sections -->
+                            <div class="grid grid-cols-2 gap-6">
+                                <!-- Values -->
+                                <div v-show="knowledgeFilter === 'all' || knowledgeFilter === 'values'" class="bg-gray-800 rounded-xl p-4">
+                                    <h4 class="text-md font-semibold mb-3 flex items-center">
+                                        <span class="text-yellow-400 mr-2">⭐</span> Values
+                                        <span class="ml-auto text-xs text-gray-500">[[ filteredValues.length ]] / [[ actorDetails.values?.length || 0 ]]</span>
+                                    </h4>
+                                    <ul class="space-y-2 max-h-48 overflow-y-auto">
+                                        <li v-for="(item, idx) in filteredValues" :key="idx" 
+                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2"
+                                            v-html="highlightSearch(item)">
+                                        </li>
+                                        <li v-if="!filteredValues.length" class="text-gray-500 text-sm">
+                                            [[ knowledgeSearch ? 'No matching values' : 'No values defined' ]]
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <!-- Principles -->
+                                <div v-show="knowledgeFilter === 'all' || knowledgeFilter === 'principles'" class="bg-gray-800 rounded-xl p-4">
+                                    <h4 class="text-md font-semibold mb-3 flex items-center">
+                                        <span class="text-purple-400 mr-2">📜</span> Principles
+                                        <span class="ml-auto text-xs text-gray-500">[[ filteredPrinciples.length ]] / [[ actorDetails.principles?.length || 0 ]]</span>
+                                    </h4>
+                                    <ul class="space-y-2 max-h-48 overflow-y-auto">
+                                        <li v-for="(item, idx) in filteredPrinciples" :key="idx" 
+                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2"
+                                            v-html="highlightSearch(item)">
+                                        </li>
+                                        <li v-if="!filteredPrinciples.length" class="text-gray-500 text-sm">
+                                            [[ knowledgeSearch ? 'No matching principles' : 'No principles defined' ]]
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <!-- Experiences -->
+                                <div v-show="knowledgeFilter === 'all' || knowledgeFilter === 'experiences'" class="bg-gray-800 rounded-xl p-4">
+                                    <h4 class="text-md font-semibold mb-3 flex items-center">
+                                        <span class="text-blue-400 mr-2">💡</span> Experiences
+                                        <span class="ml-auto text-xs text-gray-500">[[ filteredExperiences.length ]] / [[ actorDetails.experiences?.length || 0 ]]</span>
+                                    </h4>
+                                    <ul class="space-y-2 max-h-48 overflow-y-auto">
+                                        <li v-for="(item, idx) in filteredExperiences" :key="idx" 
+                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2"
+                                            v-html="highlightSearch(item)">
+                                        </li>
+                                        <li v-if="!filteredExperiences.length" class="text-gray-500 text-sm">
+                                            [[ knowledgeSearch ? 'No matching experiences' : 'No experiences recorded' ]]
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <!-- Core Knowledge -->
+                                <div v-show="knowledgeFilter === 'all' || knowledgeFilter === 'core_knowledge'" class="bg-gray-800 rounded-xl p-4">
+                                    <h4 class="text-md font-semibold mb-3 flex items-center">
+                                        <span class="text-green-400 mr-2">📚</span> Core Knowledge
+                                        <span class="ml-auto text-xs text-gray-500">[[ filteredCoreKnowledge.length ]] / [[ actorDetails.core_knowledge?.length || 0 ]]</span>
+                                    </h4>
+                                    <ul class="space-y-2 max-h-48 overflow-y-auto">
+                                        <li v-for="(item, idx) in filteredCoreKnowledge" :key="idx" 
+                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2"
+                                            v-html="highlightSearch(item)">
+                                        </li>
+                                        <li v-if="!filteredCoreKnowledge.length" class="text-gray-500 text-sm">
+                                            [[ knowledgeSearch ? 'No matching core knowledge' : 'No core knowledge' ]]
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <!-- Challenges -->
+                                <div v-show="knowledgeFilter === 'all' || knowledgeFilter === 'challenges'" class="bg-gray-800 rounded-xl p-4 col-span-2">
+                                    <h4 class="text-md font-semibold mb-3 flex items-center">
+                                        <span class="text-red-400 mr-2">⚠️</span> Challenges
+                                        <span class="ml-auto text-xs text-gray-500">[[ filteredChallenges.length ]] / [[ actorDetails.challenges?.length || 0 ]]</span>
+                                    </h4>
+                                    <ul class="space-y-2 max-h-32 overflow-y-auto">
+                                        <li v-for="(item, idx) in filteredChallenges" :key="idx" 
+                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2"
+                                            v-html="highlightSearch(item)">
+                                        </li>
+                                        <li v-if="!filteredChallenges.length" class="text-gray-500 text-sm">
+                                            [[ knowledgeSearch ? 'No matching challenges' : 'No challenges recorded' ]]
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <!-- Add Knowledge Form -->
+                            <div class="bg-gray-800 rounded-xl p-4">
+                                <h4 class="text-md font-semibold mb-3">Add Knowledge</h4>
+                                <div class="flex space-x-4">
+                                    <select v-model="addKnowledgeType" class="bg-gray-700 border border-gray-600 rounded-lg px-4 py-2">
+                                        <option value="principles">Principle</option>
+                                        <option value="experiences">Experience</option>
+                                        <option value="core_knowledge">Core Knowledge</option>
+                                        <option value="challenges">Challenge</option>
+                                    </select>
+                                    <input 
+                                        v-model="addKnowledgeContent"
+                                        type="text"
+                                        placeholder="Enter knowledge content..."
+                                        class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                                    >
+                                    <button 
+                                        @click="addKnowledge"
+                                        :disabled="!addKnowledgeContent.trim()"
+                                        class="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-6 py-2 rounded-lg font-medium transition-colors"
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- History Tab -->
+                        <div v-show="activeTab === 'history'" class="space-y-6">
+                            <!-- Recent Learnings -->
+                            <div class="bg-gray-800 rounded-xl p-4">
+                                <h4 class="text-md font-semibold mb-3">Recent Learning Events</h4>
+                                <div class="space-y-3 max-h-96 overflow-y-auto">
+                                    <div v-for="(event, idx) in actorDetails.recent_learnings" :key="idx"
+                                         class="bg-gray-700 rounded-lg p-4">
+                                        <div class="flex justify-between items-start">
+                                            <div>
+                                                <span class="text-xs bg-purple-600 px-2 py-1 rounded">[[ event.event_type ]]</span>
+                                                <p class="mt-2 text-sm text-gray-300">[[ event.description ]]</p>
+                                            </div>
+                                            <span class="text-xs text-gray-500">[[ formatDate(event.timestamp) ]]</span>
+                                        </div>
+                                        <div v-if="event.insights_gained?.length" class="mt-2">
+                                            <span class="text-xs text-gray-400">Insights:</span>
+                                            <ul class="mt-1">
+                                                <li v-for="(insight, i) in event.insights_gained" :key="i" 
+                                                    class="text-xs text-gray-400">• [[ insight ]]</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    <div v-if="!actorDetails.recent_learnings?.length" class="text-gray-500 text-center py-4">
+                                        No learning events recorded
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Archive History -->
+                            <div class="bg-gray-800 rounded-xl p-4">
+                                <h4 class="text-md font-semibold mb-3">Knowledge Archive</h4>
+                                <div class="grid grid-cols-4 gap-3">
+                                    <div v-for="(archive, idx) in actorDetails.archive_history" :key="idx"
+                                         class="bg-gray-700 rounded-lg p-3 text-sm">
+                                        <div class="font-medium text-purple-400">[[ archive.key ]]</div>
+                                        <div class="text-xs text-gray-400 truncate">[[ archive.file ]]</div>
+                                        <div class="text-xs text-gray-500">[[ formatDate(archive.modified) ]]</div>
+                                    </div>
+                                    <div v-if="!actorDetails.archive_history?.length" class="text-gray-500 col-span-4 text-center py-4">
+                                        No archives available
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Learning Sessions -->
+                            <div class="bg-gray-800 rounded-xl p-4">
+                                <h4 class="text-md font-semibold mb-3">Learning Sessions (LoRA Data)</h4>
+                                <div class="grid grid-cols-3 gap-4">
+                                    <div v-for="session in actorSessions" :key="session.session_id"
+                                         class="bg-gray-700 rounded-lg p-4 hover:bg-gray-600 transition-colors cursor-pointer">
+                                        <div class="font-medium truncate">[[ session.topic ]]</div>
+                                        <div class="text-xs text-gray-400 mt-1">
+                                            Papers: [[ session.papers_studied ]] | Q&A: [[ session.qa_pairs ]]
+                                        </div>
+                                        <div class="text-xs text-gray-500 mt-1">[[ formatDate(session.created_at) ]]</div>
+                                    </div>
+                                    <div v-if="actorSessions.length === 0" class="text-gray-500 col-span-3 text-center py-4">
+                                        No learning sessions
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            delimiters: ['[[', ']]'],
+            data() {
+                return {
+                    actors: {{ actors | tojson }},
+                    selectedActor: null,
+                    actorDetails: {},
+                    actorLoops: [],
+                    actorSessions: [],
+                    activeTab: 'chat',
+                    config: {},
+                    
+                    // Settings
+                    showSettings: false,
+                    settingsForm: {
+                        array_dir: '',
+                        apiHost: '',
+                        model: ''
+                    },
+                    
+                    // Chat
+                    chatHistory: [],
+                    chatInput: '',
+                    chatLoading: false,
+                    useCognitive: true,
+                    thoughtProcess: null,
+                    
+                    // Learning
+                    learnTopic: '',
+                    learnGoal: '',
+                    learnMode: 'standard',
+                    learnConfig: {
+                        max_papers_per_search: 15,
+                        max_papers_to_study: 3,
+                        search_depth: 2,
+                        min_citations: 10,
+                        year_from: 2018,
+                        year_to: new Date().getFullYear(),
+                        max_iterations: 2,
+                        goal_threshold: 85,
+                        fetch_pdfs: true,
+                        save_session: true,
+                        auto_save: true
+                    },
+                    learningActive: false,
+                    learnLogs: [],
+                    currentLoopId: null,
+                    
+                    // Add Knowledge
+                    addKnowledgeType: 'experiences',
+                    addKnowledgeContent: '',
+                    
+                    // Knowledge Search
+                    knowledgeSearch: '',
+                    knowledgeFilter: 'all'
+                };
+            },
+            computed: {
+                filteredValues() {
+                    return this.filterKnowledge(this.actorDetails.values);
+                },
+                filteredPrinciples() {
+                    return this.filterKnowledge(this.actorDetails.principles);
+                },
+                filteredExperiences() {
+                    return this.filterKnowledge(this.actorDetails.experiences);
+                },
+                filteredCoreKnowledge() {
+                    return this.filterKnowledge(this.actorDetails.core_knowledge);
+                },
+                filteredChallenges() {
+                    return this.filterKnowledge(this.actorDetails.challenges);
+                },
+                filteredKnowledgeCount() {
+                    return this.filteredValues.length + 
+                           this.filteredPrinciples.length + 
+                           this.filteredExperiences.length + 
+                           this.filteredCoreKnowledge.length + 
+                           this.filteredChallenges.length;
+                }
+            },
+            methods: {
+                filterKnowledge(items) {
+                    if (!items) return [];
+                    if (!this.knowledgeSearch.trim()) return items;
+                    const search = this.knowledgeSearch.toLowerCase();
+                    return items.filter(item => 
+                        item.toLowerCase().includes(search)
+                    );
+                },
+                highlightSearch(text) {
+                    if (!this.knowledgeSearch.trim()) return text;
+                    const search = this.knowledgeSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`(${search})`, 'gi');
+                    return text.replace(regex, '<mark class="bg-yellow-500/40 text-white rounded px-0.5">$1</mark>');
+                },
+                async selectActor(actor) {
+                    this.selectedActor = actor;
+                    this.chatHistory = [];
+                    this.learnLogs = [];
+                    
+                    // Fetch actor details
+                    const res = await fetch(`/api/actor/${actor}`);
+                    this.actorDetails = await res.json();
+                    
+                    // Fetch loops
+                    const loopsRes = await fetch(`/api/actor/${actor}/loops`);
+                    this.actorLoops = await loopsRes.json();
+                    
+                    // Fetch sessions
+                    const sessionsRes = await fetch(`/api/actor/${actor}/sessions`);
+                    this.actorSessions = await sessionsRes.json();
+                },
+                
+                tabClass(tab) {
+                    return [
+                        'px-4 py-2 rounded-lg font-medium transition-colors',
+                        this.activeTab === tab 
+                            ? 'bg-purple-600 text-white' 
+                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    ].join(' ');
+                },
+                
+                renderMarkdown(text) {
+                    if (!text) return '';
+                    try {
+                        const html = marked.parse(text);
+                        return DOMPurify.sanitize(html);
+                    } catch (e) {
+                        return text;
+                    }
+                },
+                
+                async saveSettings() {
+                    try {
+                        const res = await fetch('/api/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.settingsForm)
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            this.config = { ...this.config, ...this.settingsForm };
+                            this.showSettings = false;
+                            // Refresh actors list
+                            const actorsRes = await fetch('/api/actors');
+                            this.actors = await actorsRes.json();
+                        }
+                    } catch (e) {
+                        console.error('Failed to save settings:', e);
+                    }
+                },
+                
+                async sendChat() {
+                    if (!this.chatInput.trim() || this.chatLoading) return;
+                    
+                    const message = this.chatInput.trim();
+                    this.chatInput = '';
+                    this.chatHistory.push({ role: 'user', content: message });
+                    this.chatLoading = true;
+                    this.thoughtProcess = null;
+                    
+                    this.$nextTick(() => {
+                        this.$refs.chatContainer.scrollTop = this.$refs.chatContainer.scrollHeight;
+                    });
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/chat`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                message,
+                                history: this.chatHistory.slice(-10),
+                                use_cognitive: this.useCognitive
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        
+                        // Store thought process if cognitive mode
+                        if (data.cognitive && (data.analysis || data.thought_history)) {
+                            this.thoughtProcess = {
+                                analysis: data.analysis,
+                                thought_history: data.thought_history
+                            };
+                        }
+                        
+                        this.chatHistory.push({ 
+                            role: 'assistant', 
+                            content: data.response,
+                            cognitive: data.cognitive 
+                        });
+                    } catch (e) {
+                        this.chatHistory.push({ role: 'assistant', content: 'Error: ' + e.message });
+                    }
+                    
+                    this.chatLoading = false;
+                    this.$nextTick(() => {
+                        this.$refs.chatContainer.scrollTop = this.$refs.chatContainer.scrollHeight;
+                    });
+                },
+                
+                async startLearning() {
+                    if (!this.learnTopic.trim() || this.learningActive) return;
+                    
+                    this.learningActive = true;
+                    this.learnLogs = [`🚀 Starting ${this.learnMode} learning loop...`];
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/learn`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                topic: this.learnTopic,
+                                goal: this.learnGoal,
+                                mode: this.learnMode,
+                                ...this.learnConfig
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        this.currentLoopId = data.loop_id;
+                        this.learnLogs.push(`📝 Loop ID: ${data.loop_id}`);
+                        this.learnLogs.push(`⚙️ Config: ${this.learnConfig.max_iterations} iterations, ${this.learnConfig.max_papers_per_search} papers/search, depth ${this.learnConfig.search_depth}`);
+                        
+                        // Start streaming output
+                        this.streamLearningOutput(data.loop_id);
+                        
+                    } catch (e) {
+                        this.learnLogs.push('❌ Error: ' + e.message);
+                        this.learningActive = false;
+                    }
+                },
+                
+                streamLearningOutput(loopId) {
+                    const eventSource = new EventSource(`/api/loop/${loopId}/output`);
+                    
+                    eventSource.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        if (data.message) {
+                            this.learnLogs.push(data.message);
+                            this.$nextTick(() => {
+                                if (this.$refs.learnOutput) {
+                                    this.$refs.learnOutput.scrollTop = this.$refs.learnOutput.scrollHeight;
+                                }
+                            });
+                            
+                            if (data.message.includes('✅ COMPLETE') || data.message.includes('❌ ERROR')) {
+                                eventSource.close();
+                                this.learningActive = false;
+                                this.selectActor(this.selectedActor); // Refresh
+                            }
+                        }
+                    };
+                    
+                    eventSource.onerror = () => {
+                        eventSource.close();
+                        this.learningActive = false;
+                    };
+                },
+                
+                async addKnowledge() {
+                    if (!this.addKnowledgeContent.trim()) return;
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/knowledge/${this.addKnowledgeType}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                content: this.addKnowledgeContent,
+                                source: 'dashboard'
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        if (data.success) {
+                            this.addKnowledgeContent = '';
+                            this.selectActor(this.selectedActor); // Refresh
+                        }
+                    } catch (e) {
+                        console.error(e);
+                    }
+                },
+                
+                formatDate(dateStr) {
+                    if (!dateStr) return '';
+                    const date = new Date(dateStr);
+                    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                },
+                
+                truncate(text, maxLength) {
+                    if (!text) return '';
+                    if (text.length <= maxLength) return text;
+                    return text.substring(0, maxLength) + '...';
+                }
+            },
+            watch: {
+                showSettings(val) {
+                    if (val) {
+                        // Populate form when opening settings
+                        this.settingsForm = {
+                            array_dir: this.config.array_dir || '',
+                            apiHost: this.config.apiHost || '',
+                            model: this.config.model || ''
+                        };
+                    }
+                }
+            },
+            async mounted() {
+                // Load config
+                const res = await fetch('/api/config');
+                this.config = await res.json();
+                
+                // Initialize settings form
+                this.settingsForm = {
+                    array_dir: this.config.array_dir || '',
+                    apiHost: this.config.apiHost || '',
+                    model: this.config.model || ''
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
