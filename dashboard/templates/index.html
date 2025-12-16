@@ -123,11 +123,137 @@
             </div>
         </div>
 
+        <!-- Create Actor Modal -->
+        <div v-if="showCreateActor" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-gray-800 rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-bold">🎭 Create New Actor</h3>
+                    <button @click="closeCreateActorModal" class="text-gray-400 hover:text-white">✕</button>
+                </div>
+                
+                <!-- Mode Toggle -->
+                <div class="flex space-x-2 mb-6">
+                    <button @click="createActorMode = 'ai'"
+                            :class="['px-4 py-2 rounded-lg transition-colors', createActorMode === 'ai' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300']">
+                        ✨ AI Generated
+                    </button>
+                    <button @click="createActorMode = 'manual'"
+                            :class="['px-4 py-2 rounded-lg transition-colors', createActorMode === 'manual' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300']">
+                        ✏️ Manual
+                    </button>
+                </div>
+
+                <!-- AI Generation Mode -->
+                <div v-if="createActorMode === 'ai'" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Actor Name</label>
+                        <input v-model="newActorName" type="text" placeholder="e.g., chemistry_expert"
+                               class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Description</label>
+                        <textarea v-model="newActorDescription" rows="4"
+                                  placeholder="Describe the actor in detail, e.g., 'A senior chemical engineer with 10 years of experience in pharmaceutical manufacturing, specializing in process optimization and quality control.'"
+                                  class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"></textarea>
+                        <p class="text-xs text-gray-500 mt-1">The AI will generate values, principles, knowledge, and experiences based on this description.</p>
+                    </div>
+                </div>
+
+                <!-- Manual Mode -->
+                <div v-if="createActorMode === 'manual'" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Actor Name</label>
+                        <input v-model="newActorName" type="text" placeholder="e.g., my_assistant"
+                               class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Values (one per line)</label>
+                        <textarea v-model="manualProfile.values" rows="3"
+                                  placeholder="Be helpful and accurate&#10;Prioritize clarity&#10;Respect user privacy"
+                                  class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 text-sm"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Principles (one per line)</label>
+                        <textarea v-model="manualProfile.principles" rows="3"
+                                  placeholder="Always verify information before presenting&#10;Break complex problems into smaller steps"
+                                  class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 text-sm"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Core Knowledge (one per line)</label>
+                        <textarea v-model="manualProfile.core_knowledge" rows="3"
+                                  placeholder="Domain-specific facts and laws"
+                                  class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 text-sm"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Experiences (one per line)</label>
+                        <textarea v-model="manualProfile.experiences" rows="3"
+                                  placeholder="Past learnings and heuristics"
+                                  class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 text-sm"></textarea>
+                    </div>
+                </div>
+
+                <!-- Generated Preview (for AI mode) -->
+                <div v-if="generatedProfile && createActorMode === 'ai'" class="mt-6 bg-gray-900 rounded-lg p-4">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-3">Generated Profile Preview</h4>
+                    <div class="space-y-3 text-sm max-h-60 overflow-y-auto">
+                        <div v-if="generatedProfile.values?.length">
+                            <span class="text-yellow-400">Values:</span>
+                            <ul class="mt-1 space-y-1">
+                                <li v-for="v in generatedProfile.values.slice(0, 3)" class="text-gray-400 text-xs">[[ v.substring(0, 100) ]]...</li>
+                            </ul>
+                        </div>
+                        <div v-if="generatedProfile.principles?.length">
+                            <span class="text-purple-400">Principles:</span> [[ generatedProfile.principles.length ]] items
+                        </div>
+                        <div v-if="generatedProfile.core_knowledge?.length">
+                            <span class="text-green-400">Core Knowledge:</span> [[ generatedProfile.core_knowledge.length ]] items
+                        </div>
+                        <div v-if="generatedProfile.experiences?.length">
+                            <span class="text-blue-400">Experiences:</span> [[ generatedProfile.experiences.length ]] items
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error Display -->
+                <div v-if="createActorError" class="mt-4 bg-red-900/30 border border-red-500 rounded-lg p-3 text-red-400 text-sm">
+                    [[ createActorError ]]
+                </div>
+
+                <!-- Actions -->
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button @click="closeCreateActorModal" class="px-4 py-2 text-gray-400 hover:text-white">
+                        Cancel
+                    </button>
+                    <button v-if="createActorMode === 'ai' && !generatedProfile" 
+                            @click="generateActorPreview"
+                            :disabled="createActorLoading || !newActorName.trim() || !newActorDescription.trim()"
+                            class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-6 py-2 rounded-lg font-medium">
+                        <span v-if="createActorLoading">⏳ Generating...</span>
+                        <span v-else>✨ Generate Preview</span>
+                    </button>
+                    <button v-if="generatedProfile || createActorMode === 'manual'"
+                            @click="createActor"
+                            :disabled="createActorLoading || !newActorName.trim()"
+                            class="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-6 py-2 rounded-lg font-medium">
+                        <span v-if="createActorLoading">⏳ Creating...</span>
+                        <span v-else>🎭 Create Actor</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <div class="flex h-[calc(100vh-73px)]">
             <!-- Sidebar - Actor List -->
             <aside class="w-64 bg-gray-800 border-r border-gray-700 overflow-y-auto">
                 <div class="p-4">
-                    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Actors</h2>
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Actors</h2>
+                        <button @click="showCreateActor = true" 
+                                class="text-purple-400 hover:text-purple-300 transition-colors text-xl"
+                                title="Create New Actor">
+                            ➕
+                        </button>
+                    </div>
                     <div class="space-y-1">
                         <button
                             v-for="actor in actors"
@@ -805,7 +931,22 @@
                     
                     // Knowledge Search
                     knowledgeSearch: '',
-                    knowledgeFilter: 'all'
+                    knowledgeFilter: 'all',
+                    
+                    // Create Actor
+                    showCreateActor: false,
+                    createActorMode: 'ai',
+                    newActorName: '',
+                    newActorDescription: '',
+                    manualProfile: {
+                        values: '',
+                        principles: '',
+                        core_knowledge: '',
+                        experiences: ''
+                    },
+                    generatedProfile: null,
+                    createActorLoading: false,
+                    createActorError: ''
                 };
             },
             computed: {
@@ -1033,6 +1174,116 @@
                     } catch (e) {
                         console.error(e);
                     }
+                },
+                
+                // Actor Creation Methods
+                closeCreateActorModal() {
+                    this.showCreateActor = false;
+                    this.createActorMode = 'ai';
+                    this.newActorName = '';
+                    this.newActorDescription = '';
+                    this.manualProfile = {
+                        values: '',
+                        principles: '',
+                        core_knowledge: '',
+                        experiences: ''
+                    };
+                    this.generatedProfile = null;
+                    this.createActorLoading = false;
+                    this.createActorError = '';
+                },
+                
+                async generateActorPreview() {
+                    if (!this.newActorName.trim() || !this.newActorDescription.trim()) {
+                        this.createActorError = 'Please enter both name and description';
+                        return;
+                    }
+                    
+                    this.createActorLoading = true;
+                    this.createActorError = '';
+                    this.generatedProfile = null;
+                    
+                    try {
+                        const res = await fetch('/api/actor/create', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                name: this.newActorName.trim(),
+                                description: this.newActorDescription.trim(),
+                                preview: true
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        if (data.error) {
+                            this.createActorError = data.error;
+                        } else {
+                            this.generatedProfile = data.profile;
+                        }
+                    } catch (e) {
+                        this.createActorError = 'Failed to generate profile: ' + e.message;
+                    }
+                    
+                    this.createActorLoading = false;
+                },
+                
+                async createActor() {
+                    if (!this.newActorName.trim()) {
+                        this.createActorError = 'Please enter an actor name';
+                        return;
+                    }
+                    
+                    this.createActorLoading = true;
+                    this.createActorError = '';
+                    
+                    try {
+                        let endpoint, body;
+                        
+                        if (this.createActorMode === 'ai') {
+                            if (!this.newActorDescription.trim()) {
+                                this.createActorError = 'Please enter a description for AI generation';
+                                this.createActorLoading = false;
+                                return;
+                            }
+                            endpoint = '/api/actor/create';
+                            body = {
+                                name: this.newActorName.trim(),
+                                description: this.newActorDescription.trim(),
+                                preview: false
+                            };
+                        } else {
+                            endpoint = '/api/actor/create/manual';
+                            body = {
+                                name: this.newActorName.trim(),
+                                profile: this.manualProfile
+                            };
+                        }
+                        
+                        const res = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        });
+                        
+                        const data = await res.json();
+                        if (data.error) {
+                            this.createActorError = data.error;
+                        } else if (data.success) {
+                            // Refresh actors list and select the new actor
+                            const actorsRes = await fetch('/api/actors');
+                            this.actors = await actorsRes.json();
+                            this.closeCreateActorModal();
+                            
+                            // Select the newly created actor
+                            if (this.actors.includes(data.actor)) {
+                                this.selectActor(data.actor);
+                            }
+                        }
+                    } catch (e) {
+                        this.createActorError = 'Failed to create actor: ' + e.message;
+                    }
+                    
+                    this.createActorLoading = false;
                 },
                 
                 formatDate(dateStr) {
