@@ -243,18 +243,24 @@
         </div>
 
         <div class="flex h-[calc(100vh-73px)]">
-            <!-- Sidebar - Actor List -->
-            <aside class="w-64 bg-gray-800 border-r border-gray-700 overflow-y-auto">
+            <!-- Sidebar - Actor List (Collapsible) -->
+            <aside :class="['bg-gray-800 border-r border-gray-700 overflow-y-auto transition-all duration-300', sidebarCollapsed ? 'w-12' : 'w-64']">
                 <div class="p-4">
                     <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Actors</h2>
-                        <button @click="showCreateActor = true" 
+                        <h2 v-if="!sidebarCollapsed" class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Actors</h2>
+                        <button @click="sidebarCollapsed = !sidebarCollapsed" 
+                                class="text-gray-400 hover:text-white transition-colors"
+                                :title="sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'">
+                            <span v-if="sidebarCollapsed">▶️</span>
+                            <span v-else>◀️</span>
+                        </button>
+                        <button v-if="!sidebarCollapsed" @click="showCreateActor = true" 
                                 class="text-purple-400 hover:text-purple-300 transition-colors text-xl"
                                 title="Create New Actor">
                             ➕
                         </button>
                     </div>
-                    <div class="space-y-1">
+                    <div v-if="!sidebarCollapsed" class="space-y-1">
                         <button
                             v-for="actor in actors"
                             :key="actor"
@@ -271,6 +277,23 @@
                                       :class="selectedActor === actor ? 'bg-green-400' : 'bg-gray-500'"></span>
                                 [[ actor ]]
                             </span>
+                        </button>
+                    </div>
+                    <div v-else class="space-y-2 mt-4">
+                        <button
+                            v-for="actor in actors"
+                            :key="actor"
+                            @click="selectActor(actor)"
+                            :class="[
+                                'w-full px-2 py-2 rounded-lg transition-colors',
+                                selectedActor === actor 
+                                    ? 'bg-purple-600 text-white' 
+                                    : 'text-gray-300 hover:bg-gray-700'
+                            ]"
+                            :title="actor"
+                        >
+                            <span class="w-2 h-2 rounded-full mx-auto block" 
+                                  :class="selectedActor === actor ? 'bg-green-400' : 'bg-gray-500'"></span>
                         </button>
                     </div>
                 </div>
@@ -290,11 +313,20 @@
                 <div v-else class="p-6">
                     <!-- Actor Header -->
                     <div class="flex items-center justify-between mb-6">
-                        <div>
-                            <h2 class="text-3xl font-bold text-white">[[ selectedActor ]]</h2>
-                            <p class="text-gray-400 mt-1" v-if="actorDetails.mindset?.summary">
+                        <div class="flex-1">
+                            <div class="flex items-center space-x-3">
+                                <h2 class="text-3xl font-bold text-white">[[ selectedActor ]]</h2>
+                                <button v-if="actorDetails.mindset?.summary" 
+                                        @click="showActorDescription = !showActorDescription"
+                                        class="text-sm px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors">
+                                    <span v-if="showActorDescription">Hide Info</span>
+                                    <span v-else>ℹ️ Show Info</span>
+                                </button>
+                            </div>
+                            <div v-if="showActorDescription && actorDetails.mindset?.summary" 
+                                 class="mt-2 p-3 bg-gray-800 rounded-lg text-gray-400 text-sm">
                                 [[ actorDetails.mindset.summary || 'No mindset summary' ]]
-                            </p>
+                            </div>
                         </div>
                         <div class="flex space-x-3">
                             <button @click="activeTab = 'chat'" 
@@ -312,6 +344,14 @@
                             <button @click="activeTab = 'history'" 
                                     :class="tabClass('history')">
                                 📜 History
+                            </button>
+                            <button @click="activeTab = 'sleep'; loadSleepStatus()" 
+                                    :class="tabClass('sleep')">
+                                🌙 Sleep
+                            </button>
+                            <button @click="activeTab = 'train'; loadTrainingData()" 
+                                    :class="tabClass('train')">
+                                🚀 Train
                             </button>
                         </div>
                     </div>
@@ -598,15 +638,24 @@
                                         </p>
                                     </div>
                                     
-                                    <!-- Start Button -->
-                                    <button 
-                                        @click="startLearning"
-                                        :disabled="learningActive || !learnTopic.trim()"
-                                        class="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 px-6 py-3 rounded-lg font-medium transition-colors"
-                                    >
-                                        <span v-if="!learningActive">🚀 Start Learning</span>
-                                        <span v-else>⏳ Learning in progress...</span>
-                                    </button>
+                                    <!-- Start/Stop Button -->
+                                    <div class="flex space-x-2">
+                                        <button 
+                                            @click="startLearning"
+                                            :disabled="learningActive || !learnTopic.trim()"
+                                            class="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 px-6 py-3 rounded-lg font-medium transition-colors"
+                                        >
+                                            <span v-if="!learningActive">🚀 Start Learning</span>
+                                            <span v-else>⏳ Learning in progress...</span>
+                                        </button>
+                                        <button 
+                                            v-if="learningActive"
+                                            @click="stopLearning"
+                                            class="bg-red-600 hover:bg-red-700 px-6 py-3 rounded-lg font-medium transition-colors"
+                                        >
+                                            🛑 Stop
+                                        </button>
+                                    </div>
                                 </div>
                                 
                                 <!-- Learning Output -->
@@ -809,27 +858,52 @@
                         <div v-show="activeTab === 'history'" class="space-y-6">
                             <!-- Recent Learnings -->
                             <div class="bg-gray-800 rounded-xl p-4">
-                                <h4 class="text-md font-semibold mb-3">Recent Learning Events</h4>
+                                <h4 class="text-md font-semibold mb-3">Recent Learning & Sleep Events</h4>
                                 <div class="space-y-3 max-h-96 overflow-y-auto">
                                     <div v-for="(event, idx) in actorDetails.recent_learnings" :key="idx"
-                                         class="bg-gray-700 rounded-lg p-4">
+                                         :class="[
+                                             'rounded-lg p-4',
+                                             event.type === 'sleep' ? 'bg-purple-900/30 border border-purple-600/30' : 'bg-gray-700'
+                                         ]">
                                         <div class="flex justify-between items-start">
-                                            <div>
-                                                <span class="text-xs bg-purple-600 px-2 py-1 rounded">[[ event.event_type ]]</span>
-                                                <p class="mt-2 text-sm text-gray-300">[[ event.description ]]</p>
+                                            <div class="flex-1">
+                                                <div class="flex items-center space-x-2">
+                                                    <span v-if="event.type === 'sleep'" class="text-2xl">🌙</span>
+                                                    <span v-else class="text-2xl">📚</span>
+                                                    <span :class="[
+                                                        'text-xs px-2 py-1 rounded',
+                                                        event.type === 'sleep' ? 'bg-purple-600' : 'bg-blue-600'
+                                                    ]">[[ event.type || event.event_type ]]</span>
+                                                </div>
+                                                <p class="mt-2 text-sm text-gray-300">[[ event.message || event.description ]]</p>
+                                                
+                                                <!-- Sleep-specific details -->
+                                                <div v-if="event.type === 'sleep' && event.summary" class="mt-3 text-xs space-y-1">
+                                                    <div class="text-purple-400">
+                                                        ✨ Generated [[ event.summary.total_examples ]] training examples
+                                                    </div>
+                                                    <div class="text-gray-400" v-if="event.snapshot">
+                                                        📊 Consolidated: 
+                                                        [[ event.snapshot.values?.length || 0 ]] values, 
+                                                        [[ event.snapshot.principles?.length || 0 ]] principles, 
+                                                        [[ event.snapshot.core_knowledge?.length || 0 ]] knowledge items
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- Learning event details -->
+                                                <div v-if="event.insights_gained?.length" class="mt-2">
+                                                    <span class="text-xs text-gray-400">Insights:</span>
+                                                    <ul class="mt-1">
+                                                        <li v-for="(insight, i) in event.insights_gained" :key="i" 
+                                                            class="text-xs text-gray-400">• [[ insight ]]</li>
+                                                    </ul>
+                                                </div>
                                             </div>
-                                            <span class="text-xs text-gray-500">[[ formatDate(event.timestamp) ]]</span>
-                                        </div>
-                                        <div v-if="event.insights_gained?.length" class="mt-2">
-                                            <span class="text-xs text-gray-400">Insights:</span>
-                                            <ul class="mt-1">
-                                                <li v-for="(insight, i) in event.insights_gained" :key="i" 
-                                                    class="text-xs text-gray-400">• [[ insight ]]</li>
-                                            </ul>
+                                            <span class="text-xs text-gray-500 ml-4">[[ formatDate(event.timestamp) ]]</span>
                                         </div>
                                     </div>
                                     <div v-if="!actorDetails.recent_learnings?.length" class="text-gray-500 text-center py-4">
-                                        No learning events recorded
+                                        No learning or sleep events recorded
                                     </div>
                                 </div>
                             </div>
@@ -868,6 +942,377 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Sleep Tab - LoRA Training Data Generation -->
+                        <div v-show="activeTab === 'sleep'" class="space-y-6">
+                            <!-- Sleep Controls -->
+                            <div class="bg-gray-800 rounded-xl p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h3 class="text-lg font-semibold flex items-center">
+                                            <span class="mr-2">🌙</span> Sleep Mode - Memory Consolidation
+                                        </h3>
+                                        <p class="text-sm text-gray-400 mt-1">
+                                            Put [[ selectedActor ]] to sleep to consolidate memories into LoRA training data
+                                        </p>
+                                    </div>
+                                    <button 
+                                        @click="initiateSleep"
+                                        :disabled="sleepLoading"
+                                        class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                                    >
+                                        <span v-if="sleepLoading" class="animate-spin">⏳</span>
+                                        <span v-else>🌙</span>
+                                        <span>[[ sleepLoading ? 'Sleeping...' : 'Put to Sleep' ]]</span>
+                                    </button>
+                                </div>
+
+                                <!-- Sleep Options -->
+                                <div class="grid grid-cols-2 gap-4 mt-4">
+                                    <div class="bg-gray-700 rounded-lg p-4">
+                                        <label class="flex items-center space-x-2 cursor-pointer">
+                                            <input type="checkbox" v-model="sleepOptions.includeDreams" 
+                                                   class="rounded bg-gray-600 border-gray-500 text-purple-600 focus:ring-purple-500">
+                                            <span class="text-sm">💫 Include Dreams</span>
+                                        </label>
+                                        <p class="text-xs text-gray-400 mt-1 ml-6">Generate additional synthetic training examples</p>
+                                    </div>
+                                    <div class="bg-gray-700 rounded-lg p-4">
+                                        <label class="text-sm text-gray-300 block mb-2">Output Format</label>
+                                        <select v-model="sleepOptions.format" 
+                                                class="w-full bg-gray-600 border-gray-500 rounded-lg px-3 py-2 text-sm">
+                                            <option value="alpaca">Alpaca (instruction/input/output)</option>
+                                            <option value="sharegpt">ShareGPT (conversations)</option>
+                                            <option value="full">Full (with metadata)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Info Box -->
+                                <div class="mt-4 bg-gray-700/50 rounded-lg p-4">
+                                    <h4 class="text-sm font-semibold text-purple-400 mb-2">What happens during sleep?</h4>
+                                    <ul class="text-xs text-gray-400 space-y-1">
+                                        <li>• <strong>Consolidate:</strong> Gather all knowledge, experiences, and learning sessions</li>
+                                        <li>• <strong>Transform:</strong> Convert memories into instruction-response training pairs</li>
+                                        <li>• <strong>Filter:</strong> Remove duplicates and low-quality examples</li>
+                                        <li>• <strong>Export:</strong> Save as JSONL dataset ready for LoRA fine-tuning</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <!-- Sleep Status / Results -->
+                            <div class="bg-gray-800 rounded-xl p-6">
+                                <h4 class="text-md font-semibold mb-4">📊 Training Data Status</h4>
+                                
+                                <!-- Loading State -->
+                                <div v-if="sleepStatusLoading" class="text-center py-8">
+                                    <div class="animate-spin text-4xl mb-2">⏳</div>
+                                    <p class="text-gray-400">Loading status...</p>
+                                </div>
+
+                                <!-- No Data State -->
+                                <div v-else-if="!sleepStatus.has_data" class="text-center py-8">
+                                    <div class="text-4xl mb-2">😴</div>
+                                    <p class="text-gray-400">No training data yet</p>
+                                    <p class="text-xs text-gray-500 mt-1">Put the actor to sleep to generate LoRA training data</p>
+                                </div>
+
+                                <!-- Data Available -->
+                                <div v-else class="space-y-4">
+                                    <div v-for="dataset in sleepStatus.datasets" :key="dataset.filename"
+                                         class="bg-gray-700 rounded-lg p-4">
+                                        <div class="flex justify-between items-start">
+                                            <div>
+                                                <h5 class="font-medium text-purple-400">[[ dataset.filename ]]</h5>
+                                                <p class="text-xs text-gray-400 mt-1">[[ dataset.path ]]</p>
+                                            </div>
+                                            <span class="bg-green-600/20 text-green-400 px-3 py-1 rounded-full text-sm">
+                                                [[ dataset.examples ]] examples
+                                            </span>
+                                        </div>
+                                        
+                                        <div class="mt-3 text-xs text-gray-500">
+                                            Generated: [[ formatDate(dataset.generated_at) ]]
+                                        </div>
+
+                                        <!-- Category Breakdown -->
+                                        <div v-if="Object.keys(dataset.by_category || {}).length > 0" class="mt-3">
+                                            <p class="text-xs text-gray-400 mb-2">Examples by category:</p>
+                                            <div class="flex flex-wrap gap-2">
+                                                <span v-for="(count, category) in dataset.by_category" :key="category"
+                                                      class="bg-gray-600 px-2 py-1 rounded text-xs">
+                                                    [[ category ]]: [[ count ]]
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Recommended Training Params -->
+                                        <div v-if="dataset.recommended_params" class="mt-4 pt-3 border-t border-gray-600">
+                                            <p class="text-xs text-gray-400 mb-2">Recommended training parameters:</p>
+                                            <div class="grid grid-cols-4 gap-2 text-xs">
+                                                <div class="bg-gray-600/50 rounded p-2">
+                                                    <span class="text-gray-500">Epochs:</span>
+                                                    <span class="ml-1">[[ dataset.recommended_params.epochs ]]</span>
+                                                </div>
+                                                <div class="bg-gray-600/50 rounded p-2">
+                                                    <span class="text-gray-500">LR:</span>
+                                                    <span class="ml-1">[[ dataset.recommended_params.learning_rate ]]</span>
+                                                </div>
+                                                <div class="bg-gray-600/50 rounded p-2">
+                                                    <span class="text-gray-500">LoRA R:</span>
+                                                    <span class="ml-1">[[ dataset.recommended_params.lora_r ]]</span>
+                                                </div>
+                                                <div class="bg-gray-600/50 rounded p-2">
+                                                    <span class="text-gray-500">Alpha:</span>
+                                                    <span class="ml-1">[[ dataset.recommended_params.lora_alpha ]]</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Last Sleep Results -->
+                            <div v-if="lastSleepResult" class="bg-gray-800 rounded-xl p-6">
+                                <h4 class="text-md font-semibold mb-4">✨ Last Sleep Results</h4>
+                                <div class="bg-green-600/10 border border-green-600/30 rounded-lg p-4">
+                                    <p class="text-green-400">[[ lastSleepResult.message ]]</p>
+                                    <div class="mt-3 grid grid-cols-3 gap-4 text-sm">
+                                        <div>
+                                            <span class="text-gray-400">Total Examples:</span>
+                                            <span class="ml-2 font-semibold">[[ lastSleepResult.summary?.total_examples ]]</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-400">Papers Studied:</span>
+                                            <span class="ml-2 font-semibold">[[ lastSleepResult.summary?.memory_stats?.total_papers_studied ]]</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-400">Knowledge Items:</span>
+                                            <span class="ml-2 font-semibold">[[ lastSleepResult.summary?.memory_stats?.core_knowledge ]]</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Training Tab - Remote LoRA Training -->
+                        <div v-show="activeTab === 'train'" class="space-y-6">
+                            <!-- Trainer Server Status -->
+                            <div class="bg-gray-800 rounded-xl p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h3 class="text-lg font-semibold flex items-center">
+                                            <span class="mr-2">🚀</span> Remote LoRA Training
+                                        </h3>
+                                        <p class="text-sm text-gray-400 mt-1">
+                                            Train a personalized model for [[ selectedActor ]] on DGX Spark
+                                        </p>
+                                    </div>
+                                    <button @click="checkTrainerStatus" 
+                                            class="text-sm text-gray-400 hover:text-white flex items-center space-x-1">
+                                        <span>🔄</span>
+                                        <span>Refresh</span>
+                                    </button>
+                                </div>
+
+                                <!-- Server Status Card -->
+                                <div :class="[
+                                    'rounded-lg p-4 mb-4',
+                                    trainerStatus.connected ? 'bg-green-600/10 border border-green-600/30' : 
+                                    trainerStatus.enabled ? 'bg-yellow-600/10 border border-yellow-600/30' :
+                                    'bg-gray-700'
+                                ]">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center space-x-3">
+                                            <span :class="[
+                                                'w-3 h-3 rounded-full',
+                                                trainerStatus.connected ? 'bg-green-500 pulse-dot' : 
+                                                trainerStatus.enabled ? 'bg-yellow-500' : 'bg-gray-500'
+                                            ]"></span>
+                                            <div>
+                                                <p class="font-medium">
+                                                    [[ trainerStatus.connected ? 'Connected to Trainer Server' : 
+                                                       trainerStatus.enabled ? 'Trainer Enabled (Not Connected)' :
+                                                       'Trainer Not Configured' ]]
+                                                </p>
+                                                <p v-if="trainerStatus.url" class="text-xs text-gray-400">[[ trainerStatus.url ]]</p>
+                                            </div>
+                                        </div>
+                                        <div v-if="trainerStatus.connected && trainerStatus.server" class="text-right text-xs text-gray-400">
+                                            <div>GPU: <span :class="trainerStatus.server.gpu_available ? 'text-green-400' : 'text-red-400'">
+                                                [[ trainerStatus.server.gpu_available ? '✓ Available' : '✗ Not Available' ]]
+                                            </span></div>
+                                            <div v-if="trainerStatus.server.current_job">Active Job: [[ trainerStatus.server.current_job ]]</div>
+                                            <div v-if="trainerStatus.server.queued_jobs > 0">Queued: [[ trainerStatus.server.queued_jobs ]]</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div v-if="trainerStatus.error" class="mt-2 text-sm text-red-400">
+                                        ⚠️ [[ trainerStatus.error ]]
+                                    </div>
+                                </div>
+
+                                <!-- Training Form (only show if connected and has data) -->
+                                <div v-if="trainerStatus.connected && sleepStatus.has_data" class="space-y-4">
+                                    <h4 class="text-sm font-semibold text-gray-300">Training Configuration</h4>
+                                    
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs text-gray-400 mb-1">Base Model</label>
+                                            <select v-model="trainingConfig.base_model" 
+                                                    class="w-full bg-gray-700 border-gray-600 rounded-lg px-3 py-2 text-sm">
+                                                <option value="meta-llama/Llama-3.2-3B-Instruct">Llama 3.2 3B Instruct</option>
+                                                <option value="meta-llama/Llama-3.2-1B-Instruct">Llama 3.2 1B Instruct</option>
+                                                <option value="mistralai/Mistral-7B-Instruct-v0.3">Mistral 7B Instruct</option>
+                                                <option value="Qwen/Qwen2.5-7B-Instruct">Qwen 2.5 7B Instruct</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs text-gray-400 mb-1">Epochs</label>
+                                            <input type="number" v-model="trainingConfig.num_epochs" min="1" max="10"
+                                                   class="w-full bg-gray-700 border-gray-600 rounded-lg px-3 py-2 text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs text-gray-400 mb-1">LoRA Rank (r)</label>
+                                            <input type="number" v-model="trainingConfig.lora_r" min="4" max="64"
+                                                   class="w-full bg-gray-700 border-gray-600 rounded-lg px-3 py-2 text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs text-gray-400 mb-1">LoRA Alpha</label>
+                                            <input type="number" v-model="trainingConfig.lora_alpha" min="8" max="128"
+                                                   class="w-full bg-gray-700 border-gray-600 rounded-lg px-3 py-2 text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs text-gray-400 mb-1">Learning Rate</label>
+                                            <input type="text" v-model="trainingConfig.learning_rate"
+                                                   class="w-full bg-gray-700 border-gray-600 rounded-lg px-3 py-2 text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs text-gray-400 mb-1">Batch Size</label>
+                                            <input type="number" v-model="trainingConfig.batch_size" min="1" max="16"
+                                                   class="w-full bg-gray-700 border-gray-600 rounded-lg px-3 py-2 text-sm">
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        @click="startTraining"
+                                        :disabled="trainingLoading"
+                                        class="w-full mt-4 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                                    >
+                                        <span v-if="trainingLoading" class="animate-spin">⏳</span>
+                                        <span v-else>🚀</span>
+                                        <span>[[ trainingLoading ? 'Submitting...' : 'Start LoRA Training' ]]</span>
+                                    </button>
+                                </div>
+
+                                <!-- No Data Warning -->
+                                <div v-else-if="trainerStatus.connected && !sleepStatus.has_data" 
+                                     class="text-center py-8 bg-gray-700/50 rounded-lg">
+                                    <div class="text-4xl mb-2">😴</div>
+                                    <p class="text-gray-400">No training data available</p>
+                                    <p class="text-xs text-gray-500 mt-1">Go to the Sleep tab first to generate training data</p>
+                                    <button @click="activeTab = 'sleep'; loadSleepStatus()" 
+                                            class="mt-3 px-4 py-2 bg-purple-600 rounded-lg text-sm hover:bg-purple-700">
+                                        🌙 Go to Sleep Tab
+                                    </button>
+                                </div>
+
+                                <!-- Not Connected -->
+                                <div v-else-if="!trainerStatus.connected" class="text-center py-8 bg-gray-700/50 rounded-lg">
+                                    <div class="text-4xl mb-2">🔌</div>
+                                    <p class="text-gray-400">Trainer server not connected</p>
+                                    <p class="text-xs text-gray-500 mt-2 max-w-md mx-auto">
+                                        Make sure the trainer server is running on your DGX Spark and 
+                                        configure the connection in Settings (⚙️)
+                                    </p>
+                                    <div class="mt-4 text-xs text-gray-500 bg-gray-800 rounded p-3 font-mono max-w-md mx-auto">
+                                        python trainer_server/server.py --host 0.0.0.0 --port 5050
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Training Jobs -->
+                            <div class="bg-gray-800 rounded-xl p-6">
+                                <h4 class="text-md font-semibold mb-4">📋 Training Jobs</h4>
+                                
+                                <div v-if="trainingJobs.length === 0" class="text-center py-8 text-gray-500">
+                                    No training jobs yet
+                                </div>
+
+                                <div v-else class="space-y-3">
+                                    <div v-for="job in trainingJobs" :key="job.job_id"
+                                         :class="[
+                                             'rounded-lg p-4 border',
+                                             job.status === 'completed' ? 'bg-green-600/10 border-green-600/30' :
+                                             job.status === 'running' ? 'bg-blue-600/10 border-blue-600/30' :
+                                             job.status === 'failed' ? 'bg-red-600/10 border-red-600/30' :
+                                             'bg-gray-700 border-gray-600'
+                                         ]">
+                                        <div class="flex justify-between items-start">
+                                            <div>
+                                                <h5 class="font-medium">
+                                                    <span class="mr-2">
+                                                        [[ job.status === 'completed' ? '✅' : 
+                                                           job.status === 'running' ? '🔄' :
+                                                           job.status === 'failed' ? '❌' : '⏳' ]]
+                                                    </span>
+                                                    [[ job.actor_name ]] - [[ job.job_id ]]
+                                                </h5>
+                                                <p class="text-xs text-gray-400 mt-1">
+                                                    Model: [[ job.base_model ]] | Epochs: [[ job.num_epochs ]]
+                                                </p>
+                                            </div>
+                                            <span :class="[
+                                                'px-2 py-1 rounded text-xs',
+                                                job.status === 'completed' ? 'bg-green-600 text-white' :
+                                                job.status === 'running' ? 'bg-blue-600 text-white' :
+                                                job.status === 'failed' ? 'bg-red-600 text-white' :
+                                                'bg-gray-600 text-gray-300'
+                                            ]">
+                                                [[ job.status ]]
+                                            </span>
+                                        </div>
+                                        
+                                        <div v-if="job.error" class="mt-2 text-xs text-red-400 bg-red-900/20 rounded p-2">
+                                            [[ job.error ]]
+                                        </div>
+                                        
+                                        <div v-if="job.adapter_path" class="mt-2 text-xs text-gray-400">
+                                            Adapter: <span class="text-green-400 font-mono">[[ job.adapter_path ]]</span>
+                                        </div>
+                                        
+                                        <div class="mt-2 text-xs text-gray-500">
+                                            Created: [[ formatDate(job.created_at) ]]
+                                            <span v-if="job.completed_at"> | Completed: [[ formatDate(job.completed_at) ]]</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Trained Models -->
+                            <div class="bg-gray-800 rounded-xl p-6">
+                                <h4 class="text-md font-semibold mb-4">🎯 Trained Models</h4>
+                                
+                                <div v-if="trainedModels.length === 0" class="text-center py-8 text-gray-500">
+                                    No trained models yet
+                                </div>
+
+                                <div v-else class="space-y-3">
+                                    <div v-for="model in trainedModels" :key="model.adapter_path"
+                                         class="bg-gray-700 rounded-lg p-4">
+                                        <div class="flex justify-between items-start">
+                                            <div>
+                                                <h5 class="font-medium text-purple-400">[[ model.actor_name ]]</h5>
+                                                <p class="text-xs text-gray-400 mt-1 font-mono">[[ model.adapter_path ]]</p>
+                                            </div>
+                                            <span class="bg-purple-600/20 text-purple-400 px-2 py-1 rounded text-xs">
+                                                [[ model.info?.base_model?.split('/').pop() || 'Unknown' ]]
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </main>
@@ -888,6 +1333,10 @@
                     actorSessions: [],
                     activeTab: 'chat',
                     config: {},
+                    
+                    // UI State
+                    sidebarCollapsed: false,
+                    showActorDescription: false,
                     
                     // Settings
                     showSettings: false,
@@ -924,6 +1373,7 @@
                     learningActive: false,
                     learnLogs: [],
                     currentLoopId: null,
+                    currentEventSource: null,
                     
                     // Add Knowledge
                     addKnowledgeType: 'experiences',
@@ -946,7 +1396,31 @@
                     },
                     generatedProfile: null,
                     createActorLoading: false,
-                    createActorError: ''
+                    createActorError: '',
+                    
+                    // Sleep / LoRA Training
+                    sleepLoading: false,
+                    sleepStatusLoading: false,
+                    sleepStatus: { has_data: false, datasets: [] },
+                    sleepOptions: {
+                        includeDreams: true,
+                        format: 'alpaca'
+                    },
+                    lastSleepResult: null,
+                    
+                    // Remote Training
+                    trainerStatus: { enabled: false, connected: false },
+                    trainingConfig: {
+                        base_model: 'meta-llama/Llama-3.2-3B-Instruct',
+                        num_epochs: 3,
+                        lora_r: 16,
+                        lora_alpha: 32,
+                        learning_rate: '2e-4',
+                        batch_size: 4
+                    },
+                    trainingLoading: false,
+                    trainingJobs: [],
+                    trainedModels: []
                 };
             },
             computed: {
@@ -1126,8 +1600,18 @@
                     }
                 },
                 
+                stopLearning() {
+                    if (this.currentEventSource) {
+                        this.currentEventSource.close();
+                        this.currentEventSource = null;
+                    }
+                    this.learningActive = false;
+                    this.learnLogs.push('🛑 Learning stopped by user');
+                },
+                
                 streamLearningOutput(loopId) {
                     const eventSource = new EventSource(`/api/loop/${loopId}/output`);
+                    this.currentEventSource = eventSource;
                     
                     eventSource.onmessage = (event) => {
                         const data = JSON.parse(event.data);
@@ -1141,6 +1625,7 @@
                             
                             if (data.message.includes('✅ COMPLETE') || data.message.includes('❌ ERROR')) {
                                 eventSource.close();
+                                this.currentEventSource = null;
                                 this.learningActive = false;
                                 this.selectActor(this.selectedActor); // Refresh
                             }
@@ -1149,6 +1634,7 @@
                     
                     eventSource.onerror = () => {
                         eventSource.close();
+                        this.currentEventSource = null;
                         this.learningActive = false;
                     };
                 },
@@ -1174,6 +1660,129 @@
                     } catch (e) {
                         console.error(e);
                     }
+                },
+                
+                // Sleep / LoRA Training Methods
+                async loadSleepStatus() {
+                    if (!this.selectedActor) return;
+                    
+                    this.sleepStatusLoading = true;
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/sleep/status`);
+                        this.sleepStatus = await res.json();
+                    } catch (e) {
+                        console.error('Failed to load sleep status:', e);
+                        this.sleepStatus = { has_data: false, datasets: [] };
+                    }
+                    this.sleepStatusLoading = false;
+                },
+                
+                async initiateSleep() {
+                    if (!this.selectedActor || this.sleepLoading) return;
+                    
+                    this.sleepLoading = true;
+                    this.lastSleepResult = null;
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/sleep`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                include_dreams: this.sleepOptions.includeDreams,
+                                format: this.sleepOptions.format
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        
+                        if (data.error) {
+                            alert('Sleep failed: ' + data.error);
+                        } else {
+                            this.lastSleepResult = data;
+                            // Refresh status and actor details to see condensed items
+                            await this.loadSleepStatus();
+                            await this.loadActorDetails();
+                        }
+                    } catch (e) {
+                        alert('Sleep failed: ' + e.message);
+                    }
+                    
+                    this.sleepLoading = false;
+                },
+                
+                // Remote Training Methods
+                async checkTrainerStatus() {
+                    try {
+                        const res = await fetch('/api/trainer/status');
+                        this.trainerStatus = await res.json();
+                    } catch (e) {
+                        this.trainerStatus = { enabled: false, connected: false, error: e.message };
+                    }
+                },
+                
+                async loadTrainingData() {
+                    await Promise.all([
+                        this.checkTrainerStatus(),
+                        this.loadSleepStatus(),
+                        this.loadTrainingJobs(),
+                        this.loadTrainedModels()
+                    ]);
+                },
+                
+                async loadTrainingJobs() {
+                    try {
+                        const res = await fetch('/api/trainer/jobs');
+                        const data = await res.json();
+                        // Filter to current actor's jobs
+                        this.trainingJobs = (data.jobs || []).filter(j => j.actor_name === this.selectedActor);
+                    } catch (e) {
+                        this.trainingJobs = [];
+                    }
+                },
+                
+                async loadTrainedModels() {
+                    try {
+                        const res = await fetch('/api/trainer/models');
+                        const data = await res.json();
+                        // Filter to current actor's models
+                        this.trainedModels = (data.models || []).filter(m => m.actor_name === this.selectedActor);
+                    } catch (e) {
+                        this.trainedModels = [];
+                    }
+                },
+                
+                async startTraining() {
+                    if (!this.selectedActor || this.trainingLoading) return;
+                    
+                    this.trainingLoading = true;
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/train`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                base_model: this.trainingConfig.base_model,
+                                num_epochs: parseInt(this.trainingConfig.num_epochs),
+                                lora_r: parseInt(this.trainingConfig.lora_r),
+                                lora_alpha: parseInt(this.trainingConfig.lora_alpha),
+                                learning_rate: parseFloat(this.trainingConfig.learning_rate),
+                                batch_size: parseInt(this.trainingConfig.batch_size)
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        
+                        if (data.error) {
+                            alert('Training submission failed: ' + data.error + (data.hint ? '\n\n' + data.hint : ''));
+                        } else {
+                            alert(`Training job submitted successfully!\n\nJob ID: ${data.job_id}\nStatus: ${data.status}`);
+                            await this.loadTrainingJobs();
+                        }
+                    } catch (e) {
+                        alert('Training submission failed: ' + e.message);
+                    }
+                    
+                    this.trainingLoading = false;
                 },
                 
                 // Actor Creation Methods

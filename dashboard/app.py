@@ -667,5 +667,301 @@ def api_create_actor_manual():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/actor/<actor_name>/sleep', methods=['POST'])
+def api_actor_sleep(actor_name):
+    """
+    Put an actor to sleep - consolidate memories into LoRA training data.
+    
+    This processes all of the actor's accumulated knowledge, experiences,
+    and learning sessions into training data that can be used to fine-tune
+    a model to embody the actor's unique mind.
+    """
+    try:
+        from src.actions.sleep_processor import SleepProcessor
+        
+        data = request.json or {}
+        include_dreams = data.get('include_dreams', False)
+        output_format = data.get('format', 'alpaca')  # alpaca, sharegpt, or full
+        
+        processor = SleepProcessor(actor_name, verbose=False)
+        
+        # Run sleep cycle
+        result = processor.sleep()
+        
+        # Optionally generate dream examples
+        if include_dreams:
+            processor.dream()
+            # Re-export with dream examples
+            output_path = str(processor.output_dir / f"{actor_name}_lora_dataset.jsonl")
+            processor.export_dataset(output_path, format=output_format)
+            result = processor._generate_summary()
+        
+        return jsonify({
+            'success': True,
+            'actor': actor_name,
+            'summary': result,
+            'message': f'Sleep cycle complete! Generated {result["total_examples"]} training examples.'
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/actor/<actor_name>/sleep/status', methods=['GET'])
+def api_actor_sleep_status(actor_name):
+    """Get the status of LoRA training data for an actor."""
+    try:
+        array_dir = get_array_dir()
+        lora_dir = array_dir / 'data' / actor_name / 'lora_training'
+        
+        if not lora_dir.exists():
+            return jsonify({
+                'has_data': False,
+                'message': 'No sleep data yet. Put the actor to sleep to generate LoRA training data.'
+            })
+        
+        # Find dataset files
+        dataset_files = list(lora_dir.glob('*.jsonl'))
+        summary_files = list(lora_dir.glob('*.summary.json'))
+        
+        result = {
+            'has_data': len(dataset_files) > 0,
+            'datasets': []
+        }
+        
+        for dataset_file in dataset_files:
+            # Count lines (examples)
+            with open(dataset_file, 'r') as f:
+                example_count = sum(1 for _ in f)
+            
+            # Load summary if exists
+            summary_file = dataset_file.with_suffix('.summary.json')
+            summary = {}
+            if summary_file.exists():
+                with open(summary_file, 'r') as f:
+                    summary = json.load(f)
+            
+            result['datasets'].append({
+                'filename': dataset_file.name,
+                'path': str(dataset_file),
+                'examples': example_count,
+                'generated_at': summary.get('generated_at', 'Unknown'),
+                'by_category': summary.get('by_category', {}),
+                'recommended_params': summary.get('recommended_training_params', {})
+            })
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== Training Server Integration ====================
+
+def get_trainer_config():
+    """Get trainer server configuration."""
+    config = load_config()
+    return config.get('trainer_server', {
+        'host': 'localhost',
+        'port': 5050,
+        'enabled': False
+    })
+
+
+def get_trainer_url():
+    """Get the trainer server URL."""
+    trainer = get_trainer_config()
+    return f"http://{trainer['host']}:{trainer['port']}"
+
+
+@app.route('/api/trainer/status', methods=['GET'])
+def api_trainer_status():
+    """Check if the remote trainer server is available."""
+    trainer = get_trainer_config()
+    
+    if not trainer.get('enabled', False):
+        return jsonify({
+            'enabled': False,
+            'message': 'Remote trainer is not enabled in config.json'
+        })
+    
+    try:
+        import requests
+        response = requests.get(f"{get_trainer_url()}/health", timeout=5)
+        if response.ok:
+            data = response.json()
+            return jsonify({
+                'enabled': True,
+                'connected': True,
+                'server': data,
+                'url': get_trainer_url()
+            })
+    except Exception as e:
+        return jsonify({
+            'enabled': True,
+            'connected': False,
+            'error': str(e),
+            'url': get_trainer_url()
+        })
+
+
+@app.route('/api/trainer/config', methods=['GET'])
+def api_trainer_config():
+    """Get trainer server configuration."""
+    return jsonify(get_trainer_config())
+
+
+@app.route('/api/trainer/config', methods=['PUT'])
+def api_update_trainer_config():
+    """Update trainer server configuration."""
+    data = request.json
+    config = load_config()
+    
+    trainer = config.get('trainer_server', {})
+    if 'host' in data:
+        trainer['host'] = data['host']
+    if 'port' in data:
+        trainer['port'] = data['port']
+    if 'enabled' in data:
+        trainer['enabled'] = data['enabled']
+    
+    config['trainer_server'] = trainer
+    
+    config_path = project_root / 'config.json'
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=4)
+    
+    return jsonify({'success': True, 'trainer_server': trainer})
+
+
+@app.route('/api/actor/<actor_name>/train', methods=['POST'])
+def api_start_training(actor_name):
+    """Submit a LoRA training job to the remote trainer server."""
+    trainer = get_trainer_config()
+    
+    if not trainer.get('enabled', False):
+        return jsonify({
+            'error': 'Remote trainer is not enabled',
+            'hint': 'Enable trainer_server in config.json or set up DGX Spark'
+        }), 400
+    
+    # Check if training data exists
+    array_dir = get_array_dir()
+    lora_dir = array_dir / 'data' / actor_name / 'lora_training'
+    train_file = lora_dir / f"{actor_name}_lora_train.jsonl"
+    
+    if not train_file.exists():
+        return jsonify({
+            'error': 'No training data found',
+            'hint': 'Run the sleep cycle first to generate training data'
+        }), 404
+    
+    # Get training parameters from request
+    data = request.json or {}
+    
+    training_config = {
+        'actor_name': actor_name,
+        'train_file': str(train_file),
+        'base_model': data.get('base_model', 'meta-llama/Llama-3.2-3B-Instruct'),
+        'lora_r': data.get('lora_r', 16),
+        'lora_alpha': data.get('lora_alpha', 32),
+        'lora_dropout': data.get('lora_dropout', 0.05),
+        'learning_rate': data.get('learning_rate', 2e-4),
+        'num_epochs': data.get('num_epochs', 3),
+        'batch_size': data.get('batch_size', 4),
+        'gradient_accumulation_steps': data.get('gradient_accumulation_steps', 4),
+        'max_seq_length': data.get('max_seq_length', 2048),
+    }
+    
+    # Check for validation file
+    val_file = lora_dir / f"{actor_name}_lora_val.jsonl"
+    if val_file.exists():
+        training_config['val_file'] = str(val_file)
+    
+    try:
+        import requests
+        response = requests.post(
+            f"{get_trainer_url()}/api/train",
+            json=training_config,
+            timeout=30
+        )
+        
+        if response.ok:
+            result = response.json()
+            return jsonify({
+                'success': True,
+                'job_id': result.get('job_id'),
+                'status': result.get('status'),
+                'message': f'Training job submitted for {actor_name}',
+                'config': training_config
+            })
+        else:
+            return jsonify({
+                'error': 'Failed to submit training job',
+                'details': response.text
+            }), response.status_code
+            
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            'error': 'Cannot connect to trainer server',
+            'hint': f'Make sure the trainer server is running at {get_trainer_url()}'
+        }), 503
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/trainer/jobs', methods=['GET'])
+def api_trainer_jobs():
+    """Get list of training jobs from the remote server."""
+    trainer = get_trainer_config()
+    
+    if not trainer.get('enabled', False):
+        return jsonify({'jobs': [], 'enabled': False})
+    
+    try:
+        import requests
+        response = requests.get(f"{get_trainer_url()}/api/jobs", timeout=10)
+        if response.ok:
+            return jsonify(response.json())
+        return jsonify({'jobs': [], 'error': response.text})
+    except Exception as e:
+        return jsonify({'jobs': [], 'error': str(e)})
+
+
+@app.route('/api/trainer/jobs/<job_id>', methods=['GET'])
+def api_trainer_job_status(job_id):
+    """Get status of a specific training job."""
+    try:
+        import requests
+        response = requests.get(f"{get_trainer_url()}/api/jobs/{job_id}", timeout=10)
+        if response.ok:
+            return jsonify(response.json())
+        return jsonify({'error': 'Job not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/trainer/models', methods=['GET'])
+def api_trainer_models():
+    """Get list of trained models/adapters from the remote server."""
+    trainer = get_trainer_config()
+    
+    if not trainer.get('enabled', False):
+        return jsonify({'models': [], 'enabled': False})
+    
+    try:
+        import requests
+        response = requests.get(f"{get_trainer_url()}/api/models", timeout=10)
+        if response.ok:
+            return jsonify(response.json())
+        return jsonify({'models': [], 'error': response.text})
+    except Exception as e:
+        return jsonify({'models': [], 'error': str(e)})
+
+
 if __name__ == '__main__':
     app.run(debug=True, port=5050, threaded=True)

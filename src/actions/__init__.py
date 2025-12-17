@@ -6,6 +6,7 @@ Contains the execution components:
 - study_processor: Process papers and extract knowledge
 - learning_scheduler: Manage and run learning schedules
 - cognitive_loop: The unified cognitive loop manifesto
+- sleep_processor: Memory consolidation for LoRA fine-tuning
 """
 
 from src.actions.thought_processor import ThoughtProcessor
@@ -25,6 +26,11 @@ from src.actions.cognitive_loop import (
     run_forever,
     start_learning,
     resume_learning
+)
+from src.actions.sleep_processor import (
+    SleepProcessor,
+    sleep,
+    quick_sleep
 )
 
 __all__ = [
@@ -49,5 +55,10 @@ __all__ = [
     'learn_nonstop',
     'run_forever',
     'start_learning',
-    'resume_learning'
+    'resume_learning',
+    
+    # Sleep (LoRA Training Data Generation)
+    'SleepProcessor',
+    'sleep',
+    'quick_sleep'
 ]
