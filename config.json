@@ -2,6 +2,7 @@
     "apiHost": "http://192.168.1.201:8355",
     "apiKey": "EMPTY",
     "model": "local-model",
+    "max_tokens": 81072,
     "array_dir": "/Users/ruihe/mnt/silvertongueArray/array",
     "trainer_server": {
         "host": "dgx-spark.local",

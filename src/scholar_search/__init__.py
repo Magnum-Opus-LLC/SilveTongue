@@ -9,6 +9,9 @@ Components:
 - search_scholar: Async function for fetching search results
 - survey: Get search results with word analysis and citation histogram
 - SearchResult: Data class for raw search results
+- SmartPaperFetcher: Intelligent PDF extraction and download system
+- PDFExtractor: LLM-powered PDF URL extraction
+- BrowserDownloader: Browser automation for complex downloads
 """
 
 from src.scholar_search.parse_html import SearchResult, parse_html
@@ -25,6 +28,9 @@ from src.scholar_search.searcher import (
     quick_search,
     quick_survey
 )
+from src.scholar_search.smart_paper_fetcher import SmartPaperFetcher
+from src.scholar_search.pdf_extractor import PDFExtractor
+from src.scholar_search.browser_downloader import BrowserDownloader, PLAYWRIGHT_AVAILABLE
 
 __all__ = [
     # Main interface
@@ -33,6 +39,11 @@ __all__ = [
     'scholar_searcher',
     'quick_search',
     'quick_survey',
+    # Smart PDF downloading
+    'SmartPaperFetcher',
+    'PDFExtractor',
+    'BrowserDownloader',
+    'PLAYWRIGHT_AVAILABLE',
     # Low-level functions
     'SearchResult',
     'parse_html',

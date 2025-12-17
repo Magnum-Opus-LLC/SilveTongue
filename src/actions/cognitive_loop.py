@@ -904,8 +904,10 @@ class CognitiveLoop:
         
         if use_pdf:
             try:
-                from src.actions.study_processor import StudyProcessor, HAS_PDF_FETCHER
-                if HAS_PDF_FETCHER:
+                from src.actions.study_processor import StudyProcessor, HAS_PDF_FETCHER, HAS_SMART_FETCHER
+                if HAS_SMART_FETCHER:
+                    self._log("   📄 Smart Paper Fetcher enabled (LLM-guided PDF extraction)")
+                elif HAS_PDF_FETCHER:
                     self._log("   📄 PDF fetching enabled - will try to get full papers")
                 else:
                     self._log("   ⚠️ PDF fetcher not available - using abstracts only")

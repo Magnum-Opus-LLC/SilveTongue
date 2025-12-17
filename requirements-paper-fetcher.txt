@@ -1,0 +1,9 @@
+# Optional dependencies for Smart Paper Fetcher
+# Install with: pip install -r requirements-paper-fetcher.txt
+
+# Browser automation (optional, for complex PDF downloads)
+playwright>=1.40.0
+
+# Core dependencies (should already be installed)
+requests>=2.31.0
+beautifulsoup4>=4.12.0

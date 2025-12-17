@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import uuid
 
-from src.utils.chat_utils import get_chat_completion
+from src.utils.chat_utils import get_chat_completion, get_model_context_window, estimate_tokens, get_safe_chunk_size
 from src.utils.paper_parser import paper_parser
 from src.utils.knowledge_base import KnowledgeBase
 
@@ -21,6 +21,14 @@ try:
     HAS_PDF_FETCHER = True
 except ImportError:
     HAS_PDF_FETCHER = False
+
+# Smart Paper Fetcher for intelligent PDF extraction
+try:
+    from src.scholar_search.pdf_extractor import PDFExtractor
+    from src.scholar_search.browser_downloader import download_with_browser_sync, PLAYWRIGHT_AVAILABLE
+    HAS_SMART_FETCHER = True
+except ImportError:
+    HAS_SMART_FETCHER = False
 
 
 EXTRACTION_PROMPT = """You are a meticulous academic researcher extracting knowledge from a paper/article.
@@ -236,13 +244,25 @@ class StudyProcessor:
         ])
         focus_areas = ", ".join(study_config.get('focus_areas', ['key concepts']))
         
+        # Calculate safe chunk size based on model's context window
+        prompt_overhead = estimate_tokens(EXTRACTION_PROMPT.format(
+            chunk_num=1, total_chunks=1, content="", 
+            extraction_targets=extraction_targets, focus_areas=focus_areas
+        ))
+        safe_chunk_chars = get_safe_chunk_size(context_size=prompt_overhead, overhead=2000) * 4  # tokens to chars
+        
+        print(f"   Using dynamic chunk size: ~{safe_chunk_chars//1000}K chars (model context: {get_model_context_window()} tokens)")
+        
         for i, chunk in enumerate(parsed['chunks']):
             print(f"   Processing chunk {i+1}/{len(parsed['chunks'])}...")
+            
+            # Dynamically limit chunk size based on context window
+            chunk_content = chunk[:safe_chunk_chars]
             
             prompt = EXTRACTION_PROMPT.format(
                 chunk_num=i+1,
                 total_chunks=len(parsed['chunks']),
-                content=chunk[:8000],  # Limit chunk size
+                content=chunk_content,
                 extraction_targets=extraction_targets,
                 focus_areas=focus_areas
             )
@@ -337,6 +357,7 @@ class StudyProcessor:
     def study_from_url(self, paper_info: Dict, study_config: Dict) -> Dict:
         """
         Study a paper by fetching its PDF from a URL.
+        Uses Smart Paper Fetcher for intelligent PDF extraction if available.
         
         Args:
             paper_info: Paper metadata dict with keys like 'url', 'title', 'abstract', 'doi'
@@ -345,26 +366,133 @@ class StudyProcessor:
         Returns:
             Complete study result with notes and knowledge bits
         """
-        if not HAS_PDF_FETCHER:
-            # Fallback to abstract-only study
-            print(f"\n📖 Studying (abstract only - PDF fetcher not available): {paper_info.get('title', 'Unknown')}")
-            return self._study_abstract_only(paper_info, study_config)
-        
         title = paper_info.get('title', 'Unknown Paper')
         print(f"\n📖 Studying: {title}")
         
-        # Try to fetch full PDF content
-        extractor = PaperContentExtractor()
-        extracted = extractor.extract_from_paper(paper_info)
+        # Try Smart Paper Fetcher first (LLM-guided extraction)
+        if HAS_SMART_FETCHER:
+            pdf_path = self._try_smart_fetcher(paper_info)
+            if pdf_path:
+                print(f"   ✅ PDF obtained via Smart Fetcher")
+                # Study the PDF file
+                return self.study_paper(pdf_path, study_config)
         
-        if extracted['success'] and extracted.get('metadata', {}).get('content_source') == 'full_pdf':
-            print(f"   ✅ Full PDF obtained ({extracted['metadata'].get('word_count', 0)} words)")
-            return self._study_extracted_content(extracted, paper_info, study_config)
-        else:
-            # Fallback to abstract
-            if extracted.get('error'):
-                print(f"   ⚠️ {extracted['error']}")
-            return self._study_abstract_only(paper_info, study_config)
+        # Fallback to old PDF fetcher
+        if HAS_PDF_FETCHER:
+            extractor = PaperContentExtractor()
+            extracted = extractor.extract_from_paper(paper_info)
+            
+            if extracted['success'] and extracted.get('metadata', {}).get('content_source') == 'full_pdf':
+                print(f"   ✅ Full PDF obtained ({extracted['metadata'].get('word_count', 0)} words)")
+                return self._study_extracted_content(extracted, paper_info, study_config)
+            else:
+                if extracted.get('error'):
+                    print(f"   ⚠️ {extracted['error']}")
+        
+        # Final fallback to abstract
+        print(f"   ⚠️ PDF unavailable. Using abstract only.")
+        return self._study_abstract_only(paper_info, study_config)
+    
+    def _try_smart_fetcher(self, paper_info: Dict) -> Optional[Path]:
+        """
+        Try to fetch PDF using Smart Paper Fetcher (LLM-guided extraction).
+        
+        Args:
+            paper_info: Paper metadata
+            
+        Returns:
+            Path to downloaded PDF, or None if failed
+        """
+        try:
+            from src.scholar_search.pdf_extractor import PDFExtractor
+            
+            extractor = PDFExtractor()
+            
+            # Convert paper_info to search result format
+            search_result = {
+                'title': paper_info.get('title', 'Unknown'),
+                'link': paper_info.get('url', ''),
+                'citation': paper_info.get('citations', '0'),
+                'publication_info': paper_info.get('publication_info', '')
+            }
+            
+            # Check if already cached
+            cached = extractor.get_cached_pdf(paper_info.get('title', ''))
+            if cached:
+                print(f"   📦 Found in cache: {cached.name}")
+                return cached
+            
+            print(f"   🤖 Using LLM to extract PDF URLs...")
+            
+            # Use LLM to extract PDF strategies
+            pdf_strategies = extractor.extract_pdf_urls_with_llm([search_result], max_papers=1)
+            
+            if not pdf_strategies:
+                print(f"   ⚠️ LLM could not identify PDF strategies")
+                return None
+            
+            strategy = pdf_strategies[0]
+            strategies_list = strategy.get('pdf_strategies', [])
+            
+            # Sort by confidence
+            strategies_list.sort(
+                key=lambda x: {'high': 3, 'medium': 2, 'low': 1}.get(x.get('confidence', 'low'), 0),
+                reverse=True
+            )
+            
+            print(f"   📋 Trying {len(strategies_list)} strategies...")
+            
+            # Try each strategy
+            for i, pdf_strategy in enumerate(strategies_list, 1):
+                method = pdf_strategy.get('method')
+                confidence = pdf_strategy.get('confidence', 'unknown')
+                print(f"   [{i}/{len(strategies_list)}] Method: {method} (confidence: {confidence})")
+                
+                if method == 'direct':
+                    # Direct PDF URL
+                    pdf_url = pdf_strategy.get('url')
+                    if pdf_url:
+                        downloaded_path = extractor.download_pdf(
+                            pdf_url,
+                            paper_info.get('title', 'Unknown'),
+                            None
+                        )
+                        if downloaded_path:
+                            return downloaded_path
+                
+                elif method == 'page_parse':
+                    # Need to extract PDF from landing page
+                    landing_page = pdf_strategy.get('landing_page')
+                    platform = strategy.get('platform', 'unknown')
+                    if landing_page:
+                        pdf_url = extractor.extract_pdf_from_page(landing_page, platform)
+                        if pdf_url:
+                            downloaded_path = extractor.download_pdf(
+                                pdf_url,
+                                paper_info.get('title', 'Unknown'),
+                                None
+                            )
+                            if downloaded_path:
+                                return downloaded_path
+                
+                elif method == 'alternative':
+                    # Try alternative source
+                    pdf_url = pdf_strategy.get('url')
+                    if pdf_url:
+                        downloaded_path = extractor.download_pdf(
+                            pdf_url,
+                            paper_info.get('title', 'Unknown'),
+                            None
+                        )
+                        if downloaded_path:
+                            return downloaded_path
+            
+            print(f"   ⚠️ All Smart Fetcher strategies failed")
+            return None
+            
+        except Exception as e:
+            print(f"   ⚠️ Smart Fetcher error: {e}")
+            return None
     
     def _study_extracted_content(self, extracted: Dict, paper_info: Dict, study_config: Dict) -> Dict:
         """
@@ -634,15 +762,34 @@ Return a JSON object:
                           questions: List[str]) -> Optional[Dict]:
         """Synthesize knowledge bits into comprehensive notes."""
         
-        # Limit bits for prompt
-        bits_for_prompt = all_bits[:30]  # Limit to avoid token limits
+        # Get model's context window
+        max_tokens = get_model_context_window()
+        
+        # Calculate how many bits we can include
+        # Reserve: 2000 tokens for prompt template + 2000 for response
+        available_tokens = max_tokens - 4000
+        
+        # Estimate current content size
+        summaries_text = "\n".join(chunk_summaries)
+        questions_text = "\n".join(f"- {q}" for q in questions[:20])
+        base_content = summaries_text + questions_text
+        base_tokens = estimate_tokens(base_content)
+        
+        # Calculate how many bits we can fit
+        tokens_for_bits = available_tokens - base_tokens
+        avg_tokens_per_bit = 150  # Conservative estimate per knowledge bit
+        max_bits = max(5, tokens_for_bits // avg_tokens_per_bit)
+        
+        bits_for_prompt = all_bits[:int(max_bits)]
+        
+        print(f"   Synthesizing with {len(bits_for_prompt)}/{len(all_bits)} knowledge bits (max_tokens={max_tokens})")
         
         prompt = SYNTHESIS_PROMPT.format(
             paper_name=paper_name,
             file_path=file_path,
             all_bits_json=json.dumps(bits_for_prompt, indent=2),
-            chunk_summaries="\n".join(chunk_summaries),
-            questions="\n".join(f"- {q}" for q in questions[:20])
+            chunk_summaries="\n".join(chunk_summaries[:20]),  # Limit summaries too
+            questions=questions_text
         )
         
         response = get_chat_completion([
