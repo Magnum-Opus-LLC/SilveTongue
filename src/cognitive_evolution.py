@@ -269,7 +269,7 @@ def demo_nonstop_mode():
         topic=topic,
         goal=goal,
         goal_threshold=85,
-        max_iterations=10,
+        max_iterations=9999,  # Essentially unlimited
         pause_between_iterations=2,
         checkpoint_interval=1,
         on_iteration_complete=on_iteration

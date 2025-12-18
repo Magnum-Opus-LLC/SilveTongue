@@ -123,15 +123,28 @@ class PaperParser:
             }
         }
     
-    def _chunk_text(self, text: str, chunk_size: int = 4000, overlap: int = 200) -> List[str]:
+    def _chunk_text(self, text: str, chunk_size: int = None, overlap: int = 200) -> List[str]:
         """
         Split text into overlapping chunks suitable for LLM processing.
+        Automatically adapts to model's context window if chunk_size not specified.
         
         Args:
             text: Full text content
-            chunk_size: Target size of each chunk in characters
+            chunk_size: Target size of each chunk in characters (auto-calculated if None)
             overlap: Overlap between chunks to maintain context
         """
+        # Auto-calculate chunk size based on model's context window
+        if chunk_size is None:
+            try:
+                from src.utils.chat_utils import get_safe_chunk_size
+                # Get safe chunk size in tokens, convert to characters
+                safe_tokens = get_safe_chunk_size(context_size=500, overhead=2000)
+                chunk_size = safe_tokens * 4  # tokens to chars (rough estimate)
+                # Cap at reasonable max to avoid memory issues
+                chunk_size = min(chunk_size, 500000)  # 500K chars max
+            except:
+                chunk_size = 4000  # Fallback to old default
+        
         if len(text) <= chunk_size:
             return [text]
         

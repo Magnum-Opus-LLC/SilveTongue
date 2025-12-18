@@ -407,7 +407,7 @@ def api_start_learning(actor_name):
     mode = data.get('mode', 'standard')
     
     # Configuration options
-    max_iterations = data.get('max_iterations', 2)
+    max_iterations = data.get('max_iterations', 10)
     fetch_pdfs = data.get('fetch_pdfs', True)
     save_session = data.get('save_session', True)
     auto_save = data.get('auto_save', True)
@@ -458,11 +458,11 @@ def api_start_learning(actor_name):
             
             # Adjust iterations based on mode
             if mode == 'nonstop':
-                # Nonstop mode: run until goal achieved or max iterations
+                # Nonstop mode: run until goal achieved (essentially unlimited)
                 result = loop.learn_nonstop(
                     topic, goal, 
                     goal_threshold=goal_threshold,
-                    max_iterations=max_iterations
+                    max_iterations=9999  # Essentially unlimited, stops when goal achieved
                 )
             elif mode == 'quick':
                 result = loop.learn(topic, goal, max_iterations=1)
