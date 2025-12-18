@@ -406,6 +406,15 @@
                                                     ? 'bg-purple-600 ml-auto' 
                                                     : 'bg-gray-700'
                                             ]">
+                                                <!-- Images -->
+                                                <div v-if="msg.images && msg.images.length > 0" class="flex flex-wrap gap-2 mb-2">
+                                                    <img v-for="(img, imgIdx) in msg.images" :key="imgIdx" 
+                                                         :src="img" 
+                                                         class="max-w-full h-auto rounded cursor-pointer"
+                                                         style="max-height: 200px"
+                                                         @click="window.open(img, '_blank')">
+                                                </div>
+                                                <!-- Text Content -->
                                                 <div v-if="msg.role === 'user'" class="text-sm whitespace-pre-wrap">[[ msg.content ]]</div>
                                                 <div v-else class="text-sm markdown-content" v-html="renderMarkdown(msg.content)"></div>
                                             </div>
@@ -422,21 +431,45 @@
                                     </div>
                                     
                                     <!-- Chat Input -->
-                                    <div class="flex space-x-3">
-                                        <input 
-                                            v-model="chatInput"
-                                            @keyup.enter="sendChat"
-                                            type="text"
-                                            placeholder="Type your message..."
-                                            class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
-                                        >
-                                        <button 
-                                            @click="sendChat"
-                                            :disabled="chatLoading || !chatInput.trim()"
-                                            class="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-6 py-2 rounded-lg font-medium transition-colors"
-                                        >
-                                            Send
-                                        </button>
+                                    <div class="space-y-2">
+                                        <!-- Image Previews -->
+                                        <div v-if="chatImages.length > 0" class="flex flex-wrap gap-2">
+                                            <div v-for="(img, idx) in chatImages" :key="idx" class="relative group">
+                                                <img :src="img.data" class="h-20 w-20 object-cover rounded border border-gray-600">
+                                                <button @click="chatImages.splice(idx, 1)" 
+                                                        class="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-5 h-5 text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    ×
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="flex space-x-2">
+                                            <!-- Image Upload Button -->
+                                            <label class="cursor-pointer bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg px-3 py-2 transition-colors flex items-center justify-center">
+                                                <input type="file" accept="image/*" multiple @change="handleImageUpload" class="hidden">
+                                                <span class="text-xl">🖼️</span>
+                                            </label>
+                                            
+                                            <!-- Text Input -->
+                                            <textarea 
+                                                v-model="chatInput"
+                                                @keydown.enter.exact.prevent="sendChat"
+                                                @keydown.enter.shift="() => {}"
+                                                placeholder="Type your message... (Shift+Enter for new line, Enter to send)"
+                                                rows="3"
+                                                class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 resize-none"
+                                            ></textarea>
+                                            
+                                            <!-- Send Button -->
+                                            <button 
+                                                @click="sendChat"
+                                                :disabled="chatLoading || (!chatInput.trim() && chatImages.length === 0)"
+                                                class="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-6 rounded-lg font-medium transition-colors flex items-center justify-center"
+                                            >
+                                                <span v-if="!chatLoading">Send</span>
+                                                <span v-else class="pulse-dot">...</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 
@@ -1445,6 +1478,7 @@
                     // Chat
                     chatHistory: [],
                     chatInput: '',
+                    chatImages: [],  // Array of {data: base64, type: mime}
                     chatLoading: false,
                     useCognitive: true,
                     thoughtProcess: null,
@@ -1599,6 +1633,27 @@
                     }
                 },
                 
+                handleImageUpload(event) {
+                    const files = event.target.files;
+                    if (!files || files.length === 0) return;
+                    
+                    for (let file of files) {
+                        if (!file.type.startsWith('image/')) continue;
+                        
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            this.chatImages.push({
+                                data: e.target.result,
+                                type: file.type
+                            });
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                    
+                    // Clear the input
+                    event.target.value = '';
+                },
+                
                 async saveSettings() {
                     try {
                         const res = await fetch('/api/config', {
@@ -1620,11 +1675,20 @@
                 },
                 
                 async sendChat() {
-                    if (!this.chatInput.trim() || this.chatLoading) return;
+                    if (this.chatLoading) return;
+                    if (!this.chatInput.trim() && this.chatImages.length === 0) return;
                     
                     const message = this.chatInput.trim();
+                    const images = [...this.chatImages];
+                    
+                    this.chatHistory.push({ 
+                        role: 'user', 
+                        content: message,
+                        images: images.map(img => img.data)
+                    });
+                    
                     this.chatInput = '';
-                    this.chatHistory.push({ role: 'user', content: message });
+                    this.chatImages = [];
                     this.chatLoading = true;
                     this.thoughtProcess = null;
                     
@@ -1638,6 +1702,7 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 message,
+                                images: images,
                                 history: this.chatHistory.slice(-10),
                                 use_cognitive: this.useCognitive
                             })

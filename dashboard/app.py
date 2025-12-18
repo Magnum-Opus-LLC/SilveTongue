@@ -286,11 +286,12 @@ def api_chat(actor_name):
     """Chat with an actor - lightweight cognitive mode for chat only."""
     data = request.json
     message = data.get('message', '')
+    images = data.get('images', [])  # Array of {data: base64, type: mime}
     history = data.get('history', [])
     use_cognitive = data.get('use_cognitive', True)
     
-    if not message:
-        return jsonify({'error': 'No message provided'}), 400
+    if not message and not images:
+        return jsonify({'error': 'No message or images provided'}), 400
     
     # Clean history - only keep role and content (remove extra fields like 'cognitive')
     clean_history = [
@@ -358,7 +359,20 @@ PRINCIPLES:
 
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(clean_history[-10:])
-            messages.append({"role": "user", "content": message})
+            
+            # Add user message with images if present
+            if images and len(images) > 0:
+                user_content = []
+                if message:
+                    user_content.append({"type": "text", "text": message})
+                for img in images:
+                    user_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": img['data']}
+                    })
+                messages.append({"role": "user", "content": user_content})
+            else:
+                messages.append({"role": "user", "content": message})
             
             response = get_chat_completion(messages, temperature=0.7)
             
@@ -386,7 +400,20 @@ Respond naturally while staying true to these characteristics."""
 
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(clean_history[-10:])
-            messages.append({"role": "user", "content": message})
+            
+            # Add user message with images if present
+            if images and len(images) > 0:
+                user_content = []
+                if message:
+                    user_content.append({"type": "text", "text": message})
+                for img in images:
+                    user_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": img['data']}
+                    })
+                messages.append({"role": "user", "content": user_content})
+            else:
+                messages.append({"role": "user", "content": message})
             
             response = get_chat_completion(messages, temperature=0.7)
             
