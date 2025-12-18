@@ -305,11 +305,13 @@ def api_chat(actor_name):
         
         details = get_actor_details(actor_name)
         
-        # Build system prompt from actor's knowledge (limited for chat efficiency)
-        values = details.get('values', [])[:10]
-        principles = details.get('principles', [])[:10]
-        experiences = details.get('experiences', [])[:10]
-        core_knowledge = details.get('core_knowledge', [])[:10]
+        # Build system prompt from actor's knowledge - increase limits for better context
+        values = details.get('values', [])[:15]
+        principles = details.get('principles', [])[:20]
+        experiences = details.get('experiences', [])[:15]
+        core_knowledge = details.get('core_knowledge', [])[:30]
+        supporting_knowledge = details.get('supporting_knowledge', [])[:15]
+        recent_learnings = details.get('recent_learnings', [])[:10]
         
         if use_cognitive:
             # Lightweight cognitive mode - quick routing + selective knowledge
@@ -330,10 +332,16 @@ Return ONLY valid JSON."""
             except:
                 routing = {"domain": "general", "intent": "chat", "needs_knowledge": False, "complexity": "simple"}
             
-            # Step 2: Build context-aware prompt
-            system_prompt = f"""You are {actor_name}, an AI assistant.
+            # Step 2: Build context-aware prompt with full knowledge base
+            system_prompt = f"""You are {actor_name}, an AI assistant with accumulated knowledge and experience.
 
 DOMAIN: {routing.get('domain', 'General')}
+
+YOUR KNOWLEDGE BASE:
+You have learned and accumulated the following knowledge through study and experience. Use this knowledge to inform your responses.
+
+CORE KNOWLEDGE ({len(core_knowledge)} items):
+{chr(10).join(f'- {k}' for k in core_knowledge[:20]) if core_knowledge else '- Building knowledge base...'}
 
 VALUES:
 {chr(10).join(f'- {v}' for v in values) if values else '- Be helpful'}
@@ -341,21 +349,35 @@ VALUES:
 PRINCIPLES:
 {chr(10).join(f'- {p}' for p in principles) if principles else '- Think clearly'}"""
 
-            # Only add knowledge if routing says it's needed
-            if routing.get('needs_knowledge', False) and core_knowledge:
-                # Simple keyword search for relevant knowledge
-                relevant = []
-                msg_lower = message.lower()
-                for k in core_knowledge:
-                    if any(word in k.lower() for word in msg_lower.split() if len(word) > 3):
-                        relevant.append(k[:200])
-                if relevant:
-                    system_prompt += f"\n\nRELEVANT KNOWLEDGE:\n" + "\n".join(f"- {k}" for k in relevant[:5])
-
+            # Add supporting knowledge if available
+            if supporting_knowledge:
+                system_prompt += f"\n\nSUPPORTING KNOWLEDGE:\n" + "\n".join(f"- {k[:200]}" for k in supporting_knowledge[:10])
+            
+            # Add recent learnings to show what was studied recently
+            if recent_learnings:
+                system_prompt += f"\n\nRECENT LEARNINGS (from study sessions):\n" + "\n".join(
+                    f"- {l.get('topic', 'Unknown')}: {l.get('summary', '')[:150]}" 
+                    for l in recent_learnings[:5] if isinstance(l, dict)
+                )
+            
+            # Add relevant experiences based on context
             if experiences:
-                system_prompt += f"\n\nEXPERIENCES:\n" + "\n".join(f'- {e[:150]}' for e in experiences[:5])
+                # Try to find relevant experiences
+                relevant_exp = []
+                if message:
+                    msg_lower = message.lower()
+                    for exp in experiences:
+                        if any(word in exp.lower() for word in msg_lower.split() if len(word) > 3):
+                            relevant_exp.append(exp)
+                
+                # If no relevant found, show recent experiences
+                if not relevant_exp:
+                    relevant_exp = experiences[:5]
+                
+                if relevant_exp:
+                    system_prompt += f"\n\nRELEVANT EXPERIENCES:\n" + "\n".join(f"- {e[:200]}" for e in relevant_exp[:5])
 
-            system_prompt += "\n\nRespond helpfully while staying true to your values and principles."
+            system_prompt += "\n\nIMPORTANT: Draw upon your knowledge base when answering. If you have learned something relevant, mention it. Be aware of what you know and don't know."
 
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(clean_history[-10:])
@@ -387,8 +409,11 @@ PRINCIPLES:
                 'thought_history': [{"step": "Quick Route", "content": f"Domain: {routing.get('domain')}, Intent: {routing.get('intent')}"}]
             })
         else:
-            # Simple direct chat (no cognitive processing)
-            system_prompt = f"""You are {actor_name}, an AI assistant with the following characteristics:
+            # Simple direct chat (no cognitive processing) - but still include knowledge
+            system_prompt = f"""You are {actor_name}, an AI assistant with accumulated knowledge.
+
+YOUR KNOWLEDGE BASE:
+{chr(10).join(f'- {k}' for k in core_knowledge[:15]) if core_knowledge else '- Building knowledge base...'}
 
 VALUES:
 {chr(10).join(f'- {v}' for v in values[:5]) if values else '- Be helpful and accurate'}
@@ -396,7 +421,7 @@ VALUES:
 PRINCIPLES:
 {chr(10).join(f'- {p}' for p in principles[:5]) if principles else '- Think step by step'}
 
-Respond naturally while staying true to these characteristics."""
+Respond naturally while drawing upon your knowledge base. Mention relevant knowledge when applicable."""
 
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(clean_history[-10:])
