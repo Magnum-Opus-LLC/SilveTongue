@@ -669,6 +669,13 @@ class CognitiveLoop:
         
         return self._generate_summary()
     
+    def pause(self):
+        """Pause the learning loop gracefully."""
+        if self.state.phase != LoopPhase.PAUSED:
+            self.state.phase = LoopPhase.PAUSED
+            self._save_state()
+            self._log("⏸️ Loop paused")
+    
     def run_forever(
         self,
         topics: List[str] = None,

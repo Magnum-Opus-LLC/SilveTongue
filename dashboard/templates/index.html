@@ -367,6 +367,13 @@
                             <div class="flex items-center justify-between mb-4">
                                 <h3 class="text-lg font-semibold">Chat with [[ selectedActor ]]</h3>
                                 <div class="flex items-center space-x-4">
+                                    <button 
+                                        @click="loadChatHistory"
+                                        class="text-xs text-gray-400 hover:text-white flex items-center space-x-1"
+                                    >
+                                        <span>📜</span>
+                                        <span>Load History</span>
+                                    </button>
                                     <label class="flex items-center space-x-2 text-sm">
                                         <input type="checkbox" v-model="useCognitive" class="rounded bg-gray-700 border-gray-600 text-purple-600 focus:ring-purple-500">
                                         <span class="text-gray-300">🧠 Cognitive Mode</span>
@@ -2044,6 +2051,36 @@
                         }
                     } catch (e) {
                         alert('Failed to stop task: ' + e.message);
+                    }
+                },
+                
+                async loadChatHistory() {
+                    if (!this.selectedActor) return;
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/chat/history`);
+                        const data = await res.json();
+                        
+                        if (data.history && data.history.length > 0) {
+                            // Convert saved history format to chat format
+                            this.chatHistory = [];
+                            for (const turn of data.history) {
+                                this.chatHistory.push({ role: 'user', content: turn.user });
+                                this.chatHistory.push({ role: 'assistant', content: turn.assistant });
+                            }
+                            
+                            // Scroll to bottom
+                            this.$nextTick(() => {
+                                const container = this.$refs.chatContainer;
+                                if (container) {
+                                    container.scrollTop = container.scrollHeight;
+                                }
+                            });
+                        } else {
+                            alert('No chat history found for this actor');
+                        }
+                    } catch (e) {
+                        alert('Failed to load chat history: ' + e.message);
                     }
                 },
                 
