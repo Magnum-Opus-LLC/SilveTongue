@@ -353,6 +353,10 @@
                                     :class="tabClass('train')">
                                 🚀 Train
                             </button>
+                            <button @click="activeTab = 'tasks'; loadActiveTasks()" 
+                                    :class="tabClass('tasks')">
+                                ⚙️ Tasks
+                            </button>
                         </div>
                     </div>
 
@@ -1313,6 +1317,91 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Tasks Monitor Tab -->
+                        <div v-show="activeTab === 'tasks'" class="space-y-6">
+                            <div class="bg-gray-800 rounded-xl p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h3 class="text-lg font-semibold flex items-center">
+                                            <span class="mr-2">⚙️</span> Active Learning Tasks
+                                        </h3>
+                                        <p class="text-sm text-gray-400 mt-1">
+                                            Monitor running cognitive learning loops across all actors
+                                        </p>
+                                    </div>
+                                    <button @click="loadActiveTasks" 
+                                            class="text-sm bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded-lg flex items-center space-x-1">
+                                        <span>🔄</span>
+                                        <span>Refresh</span>
+                                    </button>
+                                </div>
+
+                                <!-- Active Tasks List -->
+                                <div v-if="activeTasks.length === 0" class="text-center py-12 text-gray-500">
+                                    <div class="text-4xl mb-2">✓</div>
+                                    <div>No active tasks running</div>
+                                    <div class="text-xs mt-2">Start a learning loop in the Learn tab</div>
+                                </div>
+
+                                <div v-else class="space-y-3">
+                                    <div v-for="task in activeTasks" :key="task.loop_id"
+                                         class="bg-gray-700 rounded-lg p-4 border border-gray-600">
+                                        <div class="flex items-start justify-between">
+                                            <div class="flex-1">
+                                                <div class="flex items-center space-x-2 mb-2">
+                                                    <span class="w-2 h-2 bg-green-500 rounded-full pulse-dot"></span>
+                                                    <h4 class="font-medium text-purple-400">[[ task.actor ]]</h4>
+                                                    <span class="text-xs bg-blue-600/20 text-blue-400 px-2 py-1 rounded">
+                                                        [[ task.phase ]]
+                                                    </span>
+                                                    <span class="text-xs text-gray-500">
+                                                        Iteration [[ task.iteration ]]
+                                                    </span>
+                                                </div>
+                                                
+                                                <div class="text-sm text-gray-300 mb-2">
+                                                    <strong>Topic:</strong> [[ task.topic ]]
+                                                </div>
+                                                
+                                                <div class="text-xs text-gray-400 mb-3">
+                                                    <strong>Goal:</strong> [[ task.goal ]]
+                                                </div>
+                                                
+                                                <div class="flex items-center space-x-4 text-xs text-gray-400">
+                                                    <div class="flex items-center space-x-1">
+                                                        <span>📄</span>
+                                                        <span>[[ task.papers_studied ]] papers</span>
+                                                    </div>
+                                                    <div class="flex items-center space-x-1">
+                                                        <span>💡</span>
+                                                        <span>[[ task.knowledge_bits ]] bits</span>
+                                                    </div>
+                                                    <div class="flex items-center space-x-1">
+                                                        <span>🕐</span>
+                                                        <span>Started: [[ formatTimestamp(task.started_at) ]]</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <button @click="stopTask(task.loop_id)"
+                                                    class="ml-4 text-red-400 hover:text-red-300 text-xs bg-red-600/10 hover:bg-red-600/20 px-3 py-2 rounded-lg">
+                                                Stop
+                                            </button>
+                                        </div>
+                                        
+                                        <!-- Progress Bar -->
+                                        <div v-if="task.iteration > 0" class="mt-3">
+                                            <div class="w-full bg-gray-800 rounded-full h-1.5">
+                                                <div class="bg-purple-500 h-1.5 rounded-full transition-all duration-300" 
+                                                     :style="{width: Math.min((task.iteration / 10) * 100, 100) + '%'}">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </main>
@@ -1420,7 +1509,11 @@
                     },
                     trainingLoading: false,
                     trainingJobs: [],
-                    trainedModels: []
+                    trainedModels: [],
+                    
+                    // Tasks Monitor
+                    activeTasks: [],
+                    tasksAutoRefresh: null
                 };
             },
             computed: {
@@ -1901,6 +1994,59 @@
                     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 },
                 
+                formatTimestamp(timestamp) {
+                    if (!timestamp) return 'Unknown';
+                    // Format: YYYYMMDD_HHMMSS
+                    const year = timestamp.substring(0, 4);
+                    const month = timestamp.substring(4, 6);
+                    const day = timestamp.substring(6, 8);
+                    const hour = timestamp.substring(9, 11);
+                    const min = timestamp.substring(11, 13);
+                    return `${year}-${month}-${day} ${hour}:${min}`;
+                },
+                
+                async loadActiveTasks() {
+                    try {
+                        const res = await fetch('/api/tasks/active');
+                        const data = await res.json();
+                        this.activeTasks = data.tasks || [];
+                        
+                        // Auto-refresh if there are active tasks
+                        if (this.activeTasks.length > 0 && !this.tasksAutoRefresh) {
+                            this.tasksAutoRefresh = setInterval(() => {
+                                this.loadActiveTasks();
+                            }, 5000); // Refresh every 5 seconds
+                        } else if (this.activeTasks.length === 0 && this.tasksAutoRefresh) {
+                            clearInterval(this.tasksAutoRefresh);
+                            this.tasksAutoRefresh = null;
+                        }
+                    } catch (e) {
+                        console.error('Failed to load active tasks:', e);
+                    }
+                },
+                
+                async stopTask(loopId) {
+                    if (!confirm('Are you sure you want to stop this task? Progress will be saved.')) {
+                        return;
+                    }
+                    
+                    try {
+                        const res = await fetch(`/api/tasks/stop/${loopId}`, {
+                            method: 'POST'
+                        });
+                        const data = await res.json();
+                        
+                        if (data.success) {
+                            alert('Task stopped successfully');
+                            this.loadActiveTasks();
+                        } else {
+                            alert('Failed to stop task: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        alert('Failed to stop task: ' + e.message);
+                    }
+                },
+                
                 truncate(text, maxLength) {
                     if (!text) return '';
                     if (text.length <= maxLength) return text;
@@ -1916,6 +2062,13 @@
                             apiHost: this.config.apiHost || '',
                             model: this.config.model || ''
                         };
+                    }
+                },
+                activeTab(newTab) {
+                    // Clean up tasks auto-refresh when leaving tasks tab
+                    if (newTab !== 'tasks' && this.tasksAutoRefresh) {
+                        clearInterval(this.tasksAutoRefresh);
+                        this.tasksAutoRefresh = null;
                     }
                 }
             },

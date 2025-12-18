@@ -362,6 +362,9 @@ PRINCIPLES:
             
             response = get_chat_completion(messages, temperature=0.7)
             
+            # Save chat history
+            _save_chat_turn(actor_name, message, response)
+            
             return jsonify({
                 'response': response,
                 'actor': actor_name,
@@ -387,6 +390,9 @@ Respond naturally while staying true to these characteristics."""
             
             response = get_chat_completion(messages, temperature=0.7)
             
+            # Save chat history
+            _save_chat_turn(actor_name, message, response)
+            
             return jsonify({
                 'response': response,
                 'actor': actor_name,
@@ -395,6 +401,70 @@ Respond naturally while staying true to these characteristics."""
     except Exception as e:
         import traceback
         traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def _save_chat_turn(actor_name: str, user_msg: str, assistant_msg: str):
+    """Save a chat turn to history file."""
+    try:
+        array_dir = get_array_dir()
+        chat_dir = array_dir / 'data' / actor_name / 'chat_history'
+        chat_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Load or create today's chat file
+        today = datetime.now().strftime('%Y%m%d')
+        chat_file = chat_dir / f'chat_{today}.json'
+        
+        if chat_file.exists():
+            with open(chat_file, 'r') as f:
+                data = json.load(f)
+        else:
+            data = {
+                'actor_name': actor_name,
+                'date': today,
+                'turns': []
+            }
+        
+        # Add turn
+        data['turns'].append({
+            'timestamp': datetime.now().isoformat(),
+            'user': user_msg,
+            'assistant': assistant_msg
+        })
+        
+        # Save
+        with open(chat_file, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving chat history: {e}")
+
+
+@app.route('/api/actor/<actor_name>/chat/history')
+def api_chat_history(actor_name):
+    """Get chat history for an actor."""
+    try:
+        array_dir = get_array_dir()
+        chat_dir = array_dir / 'data' / actor_name / 'chat_history'
+        
+        if not chat_dir.exists():
+            return jsonify({'history': []})
+        
+        # Get all chat files
+        chat_files = sorted(chat_dir.glob('chat_*.json'), reverse=True)
+        
+        # Return recent history (last 7 days)
+        all_turns = []
+        for chat_file in chat_files[:7]:
+            with open(chat_file, 'r') as f:
+                data = json.load(f)
+                all_turns.extend(data.get('turns', []))
+        
+        return jsonify({
+            'actor': actor_name,
+            'total_turns': len(all_turns),
+            'history': all_turns[-100:]  # Last 100 turns
+        })
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
@@ -507,6 +577,56 @@ def api_loop_status(loop_id):
     return jsonify({'running': False})
 
 
+@app.route('/api/tasks/active')
+def api_active_tasks():
+    """Get all active learning tasks/loops with their status."""
+    tasks = []
+    for loop_id, loop in active_loops.items():
+        try:
+            state = loop.get_state()
+            # Parse loop_id: actorname_timestamp
+            parts = loop_id.split('_')
+            actor = parts[0] if parts else 'unknown'
+            timestamp = '_'.join(parts[1:]) if len(parts) > 1 else ''
+            
+            tasks.append({
+                'loop_id': loop_id,
+                'actor': actor,
+                'started_at': timestamp,
+                'topic': state.topic if state else 'unknown',
+                'goal': state.goal if state else 'unknown',
+                'phase': state.phase.value if state else 'unknown',
+                'iteration': state.iteration if state else 0,
+                'papers_studied': state.total_papers_studied if state else 0,
+                'knowledge_bits': state.total_knowledge_bits if state else 0,
+                'status': 'running'
+            })
+        except Exception as e:
+            tasks.append({
+                'loop_id': loop_id,
+                'error': str(e),
+                'status': 'error'
+            })
+    
+    return jsonify({
+        'active_count': len(tasks),
+        'tasks': tasks
+    })
+
+
+@app.route('/api/tasks/stop/<loop_id>', methods=['POST'])
+def api_stop_task(loop_id):
+    """Stop a running task gracefully."""
+    if loop_id in active_loops:
+        try:
+            loop = active_loops[loop_id]
+            loop.pause()  # Gracefully pause the loop
+            return jsonify({'success': True, 'message': 'Task paused gracefully'})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'success': False, 'error': 'Task not found'}), 404
+
+
 @app.route('/api/loop/<loop_id>/output')
 def api_loop_output(loop_id):
     """Stream output from a running loop."""
@@ -526,6 +646,41 @@ def api_loop_output(loop_id):
                 yield f"data: {json.dumps({'heartbeat': True})}\n\n"
     
     return Response(generate(), mimetype='text/event-stream')
+
+
+def _save_chat_turn(actor_name: str, user_msg: str, assistant_msg: str):
+    """Save a chat turn to history file."""
+    try:
+        array_dir = get_array_dir()
+        chat_dir = array_dir / 'data' / actor_name / 'chat_history'
+        chat_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Load or create today's chat file
+        today = datetime.now().strftime('%Y%m%d')
+        chat_file = chat_dir / f'chat_{today}.json'
+        
+        if chat_file.exists():
+            with open(chat_file, 'r') as f:
+                data = json.load(f)
+        else:
+            data = {
+                'actor_name': actor_name,
+                'date': today,
+                'turns': []
+            }
+        
+        # Add turn
+        data['turns'].append({
+            'timestamp': datetime.now().isoformat(),
+            'user': user_msg,
+            'assistant': assistant_msg
+        })
+        
+        # Save
+        with open(chat_file, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving chat history: {e}")
 
 
 @app.route('/api/config')
