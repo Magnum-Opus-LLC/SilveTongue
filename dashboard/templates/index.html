@@ -759,6 +759,16 @@
                                         <option value="core_knowledge">Core Knowledge</option>
                                         <option value="challenges">Challenges</option>
                                     </select>
+                                    <button 
+                                        @click="refreshKnowledge"
+                                        :disabled="knowledgeRefreshing"
+                                        class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                                        title="Refresh knowledge base"
+                                    >
+                                        <span :class="{'animate-spin': knowledgeRefreshing}">🔄</span>
+                                        <span v-if="!knowledgeRefreshing">Refresh</span>
+                                        <span v-else>Refreshing...</span>
+                                    </button>
                                     <span v-if="knowledgeSearch" class="text-sm text-gray-400">
                                         [[ filteredKnowledgeCount ]] results
                                     </span>
@@ -1625,6 +1635,7 @@
                     // Knowledge Search
                     knowledgeSearch: '',
                     knowledgeFilter: 'all',
+                    knowledgeRefreshing: false,
                     
                     // Create Actor
                     showCreateActor: false,
@@ -1702,6 +1713,24 @@
                 }
             },
             methods: {
+                async refreshKnowledge() {
+                    if (!this.selectedActor || this.knowledgeRefreshing) return;
+                    
+                    this.knowledgeRefreshing = true;
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}`);
+                        const data = await res.json();
+                        
+                        // Update actor details with fresh data
+                        this.actorDetails = data;
+                        
+                    } catch (e) {
+                        console.error('Failed to refresh knowledge:', e);
+                        alert('Failed to refresh knowledge: ' + e.message);
+                    }
+                    this.knowledgeRefreshing = false;
+                },
+                
                 filterKnowledge(items) {
                     if (!items) return [];
                     if (!this.knowledgeSearch.trim()) return items;
