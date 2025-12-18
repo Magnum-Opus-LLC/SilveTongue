@@ -1750,9 +1750,7 @@
                     this.chatHistory = [];
                     this.learnLogs = [];
                     
-                    // Fetch actor details
-                    const res = await fetch(`/api/actor/${actor}`);
-                    this.actorDetails = await res.json();
+                    await this.loadActorDetails();
                     
                     // Fetch loops
                     const loopsRes = await fetch(`/api/actor/${actor}/loops`);
@@ -1761,6 +1759,13 @@
                     // Fetch sessions
                     const sessionsRes = await fetch(`/api/actor/${actor}/sessions`);
                     this.actorSessions = await sessionsRes.json();
+                },
+                
+                async loadActorDetails() {
+                    if (!this.selectedActor) return;
+                    
+                    const res = await fetch(`/api/actor/${this.selectedActor}`);
+                    this.actorDetails = await res.json();
                 },
                 
                 tabClass(tab) {
