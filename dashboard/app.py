@@ -368,6 +368,9 @@ Provide a thoughtful, helpful response that reflects your knowledge and characte
                 'response': response,
                 'actor': actor_name,
                 'cognitive': True,
+                'system_prompt': system_prompt,
+                'subconscious_analysis': analysis,
+                'conscious_prompt': conscious_prompt,
                 'analysis': analysis,
                 'thought_history': [
                     {"step": "Subconscious Analysis", "content": f"Domain: {analysis.get('domain', 'Unknown')}"},

@@ -401,11 +401,12 @@
                                         </div>
                                         <div v-for="(msg, idx) in chatHistory" :key="idx" class="mb-4">
                                             <div :class="[
-                                                'max-w-[80%] p-3 rounded-lg',
+                                                'max-w-[80%] p-3 rounded-lg transition-all',
                                                 msg.role === 'user' 
                                                     ? 'bg-purple-600 ml-auto' 
-                                                    : 'bg-gray-700'
-                                            ]">
+                                                    : 'bg-gray-700 cursor-pointer hover:bg-gray-600'
+                                            ]"
+                                            @click="msg.role === 'assistant' ? showMessageDetails(msg, idx) : null">
                                                 <!-- Images -->
                                                 <div v-if="msg.images && msg.images.length > 0" class="flex flex-wrap gap-2 mb-2">
                                                     <img v-for="(img, imgIdx) in msg.images" :key="imgIdx" 
@@ -419,8 +420,9 @@
                                                 <div v-else class="text-sm markdown-content" v-html="renderMarkdown(msg.content)"></div>
                                             </div>
                                             <!-- Show cognitive badge if response was cognitive -->
-                                            <div v-if="msg.role === 'assistant' && msg.cognitive" class="text-xs text-purple-400 mt-1">
-                                                🧠 Cognitive response
+                                            <div v-if="msg.role === 'assistant'" class="text-xs mt-1 flex items-center space-x-2">
+                                                <span v-if="msg.cognitive" class="text-purple-400">🧠 Cognitive response</span>
+                                                <span class="text-gray-500">• Click to view details</span>
                                             </div>
                                         </div>
                                         <div v-if="chatLoading" class="flex items-center space-x-2 text-gray-400">
@@ -1446,6 +1448,83 @@
                 </div>
             </main>
         </div>
+        
+        <!-- Message Details Modal -->
+        <div v-if="showMessageDetailsModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" @click.self="showMessageDetailsModal = false">
+            <div class="bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="sticky top-0 bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between">
+                    <h3 class="text-lg font-semibold">Response Details #[[ selectedMessageIndex + 1 ]]</h3>
+                    <button @click="showMessageDetailsModal = false" class="text-gray-400 hover:text-white">✕</button>
+                </div>
+                
+                <div v-if="selectedMessage" class="p-6 space-y-6">
+                    <!-- Response Content -->
+                    <div>
+                        <h4 class="text-sm font-semibold text-purple-400 mb-2">📝 Response</h4>
+                        <div class="bg-gray-900 rounded-lg p-4 text-sm markdown-content" v-html="renderMarkdown(selectedMessage.content)"></div>
+                    </div>
+                    
+                    <!-- Cognitive Badge -->
+                    <div v-if="selectedMessage.cognitive" class="flex items-center space-x-2 text-sm">
+                        <span class="bg-purple-600/20 text-purple-400 px-3 py-1 rounded-full">🧠 Cognitive Mode</span>
+                    </div>
+                    
+                    <!-- Subconscious Analysis -->
+                    <div v-if="selectedMessage.subconscious_analysis">
+                        <h4 class="text-sm font-semibold text-blue-400 mb-2">🔍 Subconscious Analysis</h4>
+                        <div class="bg-gray-900 rounded-lg p-4">
+                            <div class="space-y-3 text-sm">
+                                <div v-if="selectedMessage.subconscious_analysis.domain">
+                                    <span class="text-gray-400">Domain:</span>
+                                    <span class="text-white ml-2">[[ selectedMessage.subconscious_analysis.domain ]]</span>
+                                </div>
+                                
+                                <div v-if="selectedMessage.subconscious_analysis.relevant_experiences?.length">
+                                    <div class="text-gray-400 mb-1">Relevant Experiences:</div>
+                                    <ul class="list-disc list-inside text-gray-300 space-y-1">
+                                        <li v-for="exp in selectedMessage.subconscious_analysis.relevant_experiences" :key="exp">[[ exp ]]</li>
+                                    </ul>
+                                </div>
+                                
+                                <div v-if="selectedMessage.subconscious_analysis.relevant_knowledge?.length">
+                                    <div class="text-gray-400 mb-1">Relevant Knowledge:</div>
+                                    <ul class="list-disc list-inside text-gray-300 space-y-1">
+                                        <li v-for="know in selectedMessage.subconscious_analysis.relevant_knowledge" :key="know">[[ know ]]</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Conscious Prompt -->
+                    <div v-if="selectedMessage.conscious_prompt">
+                        <h4 class="text-sm font-semibold text-green-400 mb-2">🧠 Conscious Prompt</h4>
+                        <div class="bg-gray-900 rounded-lg p-4">
+                            <pre class="text-xs text-gray-300 whitespace-pre-wrap font-mono">[[ selectedMessage.conscious_prompt ]]</pre>
+                        </div>
+                    </div>
+                    
+                    <!-- Full System Prompt -->
+                    <div v-if="selectedMessage.system_prompt">
+                        <h4 class="text-sm font-semibold text-yellow-400 mb-2">⚙️ Full System Prompt</h4>
+                        <div class="bg-gray-900 rounded-lg p-4">
+                            <pre class="text-xs text-gray-300 whitespace-pre-wrap font-mono">[[ selectedMessage.system_prompt ]]</pre>
+                        </div>
+                    </div>
+                    
+                    <!-- Thought History -->
+                    <div v-if="selectedMessage.thought_history?.length">
+                        <h4 class="text-sm font-semibold text-cyan-400 mb-2">💭 Thought Process</h4>
+                        <div class="space-y-2">
+                            <div v-for="(thought, idx) in selectedMessage.thought_history" :key="idx" class="bg-gray-900 rounded-lg p-3">
+                                <div class="text-xs font-semibold text-cyan-300 mb-1">[[ thought.step ]]</div>
+                                <div class="text-xs text-gray-400">[[ thought.content ]]</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -1554,7 +1633,12 @@
                     
                     // Tasks Monitor
                     activeTasks: [],
-                    tasksAutoRefresh: null
+                    tasksAutoRefresh: null,
+                    
+                    // Message Details Modal
+                    showMessageDetailsModal: false,
+                    selectedMessage: null,
+                    selectedMessageIndex: null
                 };
             },
             computed: {
@@ -1654,6 +1738,12 @@
                     event.target.value = '';
                 },
                 
+                showMessageDetails(msg, idx) {
+                    this.selectedMessage = msg;
+                    this.selectedMessageIndex = idx;
+                    this.showMessageDetailsModal = true;
+                },
+                
                 async saveSettings() {
                     try {
                         const res = await fetch('/api/config', {
@@ -1721,7 +1811,11 @@
                         this.chatHistory.push({ 
                             role: 'assistant', 
                             content: data.response,
-                            cognitive: data.cognitive 
+                            cognitive: data.cognitive,
+                            system_prompt: data.system_prompt,
+                            subconscious_analysis: data.subconscious_analysis,
+                            conscious_prompt: data.conscious_prompt,
+                            thought_history: data.thought_history
                         });
                     } catch (e) {
                         this.chatHistory.push({ role: 'assistant', content: 'Error: ' + e.message });
