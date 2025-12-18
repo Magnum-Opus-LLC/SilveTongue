@@ -69,32 +69,88 @@ class KnowledgeBase:
                 self._cache[key] = yaml.safe_load(f) or {}
         return self._cache[key]
 
-    def get_principles(self):
+    def _track_usage(self, key: str, item_index: int = None):
+        """Track when knowledge items are accessed for usage-based condensation."""
+        usage_file = self.actor_root / 'usage_stats.json'
+        
+        # Load existing usage stats
+        if usage_file.exists():
+            with open(usage_file, 'r') as f:
+                usage = json.load(f)
+        else:
+            usage = {}
+        
+        # Initialize category if needed
+        if key not in usage:
+            usage[key] = {'access_count': 0, 'last_accessed': None, 'items': {}}
+        
+        # Update access stats
+        usage[key]['access_count'] += 1
+        usage[key]['last_accessed'] = datetime.now().isoformat()
+        
+        # Track individual item if specified
+        if item_index is not None:
+            item_key = str(item_index)
+            if item_key not in usage[key]['items']:
+                usage[key]['items'][item_key] = {'count': 0, 'last_accessed': None}
+            usage[key]['items'][item_key]['count'] += 1
+            usage[key]['items'][item_key]['last_accessed'] = datetime.now().isoformat()
+        
+        # Save updated usage
+        with open(usage_file, 'w') as f:
+            json.dump(usage, f, indent=2)
+    
+    def get_usage_stats(self, key: str = None):
+        """Get usage statistics for knowledge items."""
+        usage_file = self.actor_root / 'usage_stats.json'
+        if not usage_file.exists():
+            return {} if key is None else {'access_count': 0, 'items': {}}
+        
+        with open(usage_file, 'r') as f:
+            usage = json.load(f)
+        
+        return usage.get(key, {'access_count': 0, 'items': {}}) if key else usage
+
+    def get_principles(self, track_usage=True):
         data = self._load_yaml('principles')
+        if track_usage:
+            self._track_usage('principles')
         return data.get('principles', [])
 
-    def get_adjustments(self):
+    def get_adjustments(self, track_usage=True):
         data = self._load_yaml('adjustments')
+        if track_usage:
+            self._track_usage('adjustments')
         return data.get('adjustments', [])
 
-    def get_core_knowledge(self):
+    def get_core_knowledge(self, track_usage=True):
         data = self._load_yaml('core_knowledge')
+        if track_usage:
+            self._track_usage('core_knowledge')
         return data.get('core_knowledge', [])
 
-    def get_supporting_knowledge(self):
+    def get_supporting_knowledge(self, track_usage=True):
         data = self._load_yaml('supporting_knowledge')
+        if track_usage:
+            self._track_usage('supporting_knowledge')
         return data.get('supporting_knowledge', [])
 
-    def get_experiences(self):
+    def get_experiences(self, track_usage=True):
         data = self._load_yaml('experiences')
+        if track_usage:
+            self._track_usage('experiences')
         return data.get('experiences', [])
 
-    def get_challenges(self):
+    def get_challenges(self, track_usage=True):
         data = self._load_yaml('challenges')
+        if track_usage:
+            self._track_usage('challenges')
         return data.get('challenges', [])
 
-    def get_values(self):
+    def get_values(self, track_usage=True):
         data = self._load_yaml('values')
+        if track_usage:
+            self._track_usage('values')
         return data.get('values', [])
 
     def refresh(self):

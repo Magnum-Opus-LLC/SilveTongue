@@ -860,21 +860,14 @@ def api_actor_sleep(actor_name):
         from src.actions.sleep_processor import SleepProcessor
         
         data = request.json or {}
-        include_dreams = data.get('include_dreams', False)
+        include_dreams = data.get('include_dreams', True)
         output_format = data.get('format', 'alpaca')  # alpaca, sharegpt, or full
         
-        processor = SleepProcessor(actor_name, verbose=False)
+        # Use verbose=True so we can see consolidation logs
+        processor = SleepProcessor(actor_name, verbose=True)
         
-        # Run sleep cycle
+        # Run complete sleep cycle (includes dreams by default)
         result = processor.sleep()
-        
-        # Optionally generate dream examples
-        if include_dreams:
-            processor.dream()
-            # Re-export with dream examples
-            output_path = str(processor.output_dir / f"{actor_name}_lora_dataset.jsonl")
-            processor.export_dataset(output_path, format=output_format)
-            result = processor._generate_summary()
         
         return jsonify({
             'success': True,
@@ -933,6 +926,50 @@ def api_actor_sleep_status(actor_name):
             })
         
         return jsonify(result)
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/actor/<actor_name>/datasets/merge', methods=['POST'])
+def api_merge_datasets(actor_name):
+    """
+    Merge multiple LoRA datasets from different learning sessions.
+    
+    Request body:
+    {
+        "dataset_files": ["file1.jsonl", "file2.jsonl"],  // Filenames to merge
+        "output_name": "merged_dataset.jsonl"  // Optional, auto-generates if not provided
+    }
+    """
+    try:
+        from src.actions.sleep_processor import merge_datasets
+        
+        data = request.json or {}
+        dataset_files = data.get('dataset_files', [])
+        output_name = data.get('output_name', None)
+        
+        if not dataset_files or len(dataset_files) < 2:
+            return jsonify({
+                'error': 'Must provide at least 2 datasets to merge'
+            }), 400
+        
+        # Build full paths
+        array_dir = get_array_dir()
+        lora_dir = array_dir / 'data' / actor_name / 'lora_training'
+        dataset_paths = [str(lora_dir / filename) for filename in dataset_files]
+        
+        # Merge datasets
+        result = merge_datasets(actor_name, dataset_paths, output_name)
+        
+        return jsonify({
+            'success': True,
+            'actor': actor_name,
+            'result': result,
+            'message': f'Merged {result["sources_merged"]} datasets into {result["total_examples"]} examples'
+        })
         
     except Exception as e:
         import traceback

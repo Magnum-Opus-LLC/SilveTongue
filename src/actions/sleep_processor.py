@@ -200,10 +200,9 @@ class SleepProcessor:
         self._log("\n🔍 Phase 4: Quality filtering...")
         self._filter_examples()
         
-        # Phase 5: Export dataset
+        # Phase 5: Export dataset with timestamp
         self._log("\n💾 Phase 5: Exporting dataset...")
-        export_path = output_path or str(self.output_dir / f"{self.actor_name}_lora_dataset.jsonl")
-        self.export_dataset(export_path)
+        export_path = self.export_dataset(output_path)  # Will auto-generate timestamped name if None
         
         # Phase 6: Consolidate and condense knowledge
         self._log("\n🗜️ Phase 6: Consolidating and condensing knowledge...")
@@ -239,12 +238,21 @@ class SleepProcessor:
             ('supporting_knowledge', self.memories.supporting_knowledge, self.kb.paths['supporting_knowledge']),
         ]
         
+        # Get usage statistics to inform condensation decisions
+        usage_stats = self.kb.get_usage_stats()
+        
         for category_name, items, file_path in categories:
             if not items or len(items) < 3:  # Skip if too few items
                 self._log(f"   ⊘ Skipping {category_name} (only {len(items)} items)")
                 continue
             
+            # Get usage info for this category
+            category_usage = usage_stats.get(category_name, {'access_count': 0, 'items': {}})
+            frequently_used = self._identify_frequently_used_items(category_name, items, category_usage)
+            
             self._log(f"   🔄 Consolidating {len(items)} {category_name}...")
+            if frequently_used:
+                self._log(f"      📌 {len(frequently_used)} frequently-used items will be preserved")
             
             # Archive original items
             archive_dir = archive_base / category_name
@@ -270,8 +278,8 @@ class SleepProcessor:
                 self._log(f"      ⚠ Could not archive {category_name}: {e}")
                 continue
             
-            # Condense using LLM (model decides optimal count)
-            condensed_items = self._condense_items(category_name, items)
+            # Condense using LLM with usage awareness
+            condensed_items = self._condense_items(category_name, items, frequently_used)
             
             if condensed_items:
                 # Update the main file with condensed items
@@ -297,7 +305,26 @@ class SleepProcessor:
                 except Exception as e:
                     self._log(f"      ⚠ Could not update {category_name}: {e}")
     
-    def _condense_items(self, category_name: str, items: List[str]) -> List[str]:
+    def _identify_frequently_used_items(self, category_name: str, items: List[str], usage: dict) -> List[int]:
+        """Identify items that are frequently accessed and should be kept separate."""
+        if not usage or 'items' not in usage:
+            return []
+        
+        # Get items with significant usage (accessed in last 7 days or >5 times)
+        from datetime import datetime, timedelta
+        recent_threshold = (datetime.now() - timedelta(days=7)).isoformat()
+        frequently_used = []
+        
+        for idx_str, stats in usage['items'].items():
+            idx = int(idx_str)
+            if idx < len(items):
+                # Keep if accessed >5 times OR accessed recently
+                if stats['count'] > 5 or (stats.get('last_accessed', '') > recent_threshold):
+                    frequently_used.append(idx)
+        
+        return frequently_used
+    
+    def _condense_items(self, category_name: str, items: List[str], frequently_used: List[int] = None) -> List[str]:
         """
         Use LLM to condense and remove redundancy from a list of items.
         The model decides the optimal number of items to retain.
@@ -306,41 +333,92 @@ class SleepProcessor:
         if len(items) <= 5:
             return items
         
-        # Prepare prompt
+        # Calculate target size - be less aggressive for better quality
+        # Aim for 20-40% reduction depending on size
+        if len(items) > 50:
+            target_min = int(len(items) * 0.6)   # Keep at least 60%
+            target_max = int(len(items) * 0.8)   # Up to 80%
+        elif len(items) > 20:
+            target_min = int(len(items) * 0.65)  # Keep at least 65%
+            target_max = int(len(items) * 0.85)  # Up to 85%
+        else:
+            target_min = int(len(items) * 0.7)   # Keep at least 70%
+            target_max = int(len(items) * 0.9)   # Up to 90%
+        
+        # Mark frequently-used items
+        frequently_used = frequently_used or []
+        items_with_markers = []
+        for i, item in enumerate(items):
+            marker = " 🔥FREQUENTLY_USED" if i in frequently_used else ""
+            items_with_markers.append(f"{i+1}. {item}{marker}")
+        
+        # Prepare prompt with better guidance
         prompt = f"""You are consolidating {category_name} for the AI actor "{self.actor_name}".
 
 Original {category_name} ({len(items)} items):
-{chr(10).join(f"{i+1}. {item}" for i, item in enumerate(items))}
+{chr(10).join(items_with_markers)}
 
-Task: Analyze these items and condense them into the MINIMUM number needed to:
-1. Remove all redundancy and overlap
-2. Preserve all unique, important information
-3. Merge related concepts into comprehensive statements
-4. Reference original items by number (e.g., "Based on items 1, 3, 5...")
-5. Maintain clarity and specificity
+NOTE: Items marked with 🔥FREQUENTLY_USED are actively being accessed and should be kept separate (not merged).
 
-Decide yourself how many items are truly necessary - could be 5, 10, 15, or whatever makes sense.
-Quality over quantity: prefer fewer comprehensive items over many overlapping ones.
+Task: Intelligently condense these items into {target_min}-{target_max} consolidated items by:
+1. **Merging closely related concepts** - combine items that overlap significantly
+2. **Removing exact duplicates** - eliminate any repeated information
+3. **Preserving unique insights** - keep distinct, valuable information separate
+4. **Creating clear item references** - prefix each with source item numbers [Items X,Y,Z]
+5. **Maintaining specificity** - don't over-generalize; keep technical details
 
-Return ONLY a JSON array of condensed items with references.
-Example format: ["Based on items 1-3: [condensed content]", "From items 4, 7: [condensed content]"]"""
+Guidelines:
+- Merge 2-4 related items together when they share a common theme
+- Keep unique, unrelated items separate (don't force merging of unrelated concepts)
+- Aim for {target_min}-{target_max} final items (about 20-40% reduction)
+- Each condensed item should be comprehensive but focused
+
+Return ONLY a valid JSON array of strings. Each string must start with item references.
+Format: ["[Items 1,3] Combined concept...", "[Items 2,5,7] Merged principle...", "[Item 4] Unique insight..."]
+
+JSON array only, no code blocks, no explanations:"""
 
         try:
             response = get_chat_completion([
-                {"role": "system", "content": f"You are an expert at consolidating and organizing knowledge for {self.actor_name}."},
+                {"role": "system", "content": f"You are an expert at consolidating knowledge for {self.actor_name}. You merge related concepts while preserving unique insights. Always include item references."},
                 {"role": "user", "content": prompt}
             ], temperature=0.3)
             
+            # Clean response - remove markdown code blocks if present
+            response = response.strip()
+            if response.startswith('```'):
+                # Remove markdown code blocks
+                lines = response.split('\n')
+                response = '\n'.join(line for line in lines if not line.strip().startswith('```'))
+                response = response.strip()
+            
             # Parse JSON response
-            condensed = json.loads(response.strip())
+            condensed = json.loads(response)
             
             if isinstance(condensed, list) and len(condensed) > 0:
-                self._log(f"      ✓ Model condensed {len(items)} → {len(condensed)} items")
-                return condensed
+                reduction_pct = int((1 - len(condensed)/len(items)) * 100)
+                self._log(f"      ✓ Model condensed {len(items)} → {len(condensed)} items ({reduction_pct}% reduction)")
+                
+                # Accept if we reduced the count meaningfully (at least 10% reduction)
+                if len(condensed) < len(items) * 0.9:
+                    # Verify all items have references
+                    items_with_refs = [item for item in condensed if '[Item' in item]
+                    if len(items_with_refs) == len(condensed):
+                        self._log(f"      ✓ All condensed items include source references")
+                    else:
+                        self._log(f"      ⚠ Warning: {len(condensed) - len(items_with_refs)} items missing references")
+                    return condensed
+                else:
+                    self._log(f"      ⚠ Insufficient reduction ({reduction_pct}%), keeping originals")
+                    return items
             else:
                 self._log(f"      ⚠ Invalid condensation result, keeping originals")
                 return items
                 
+        except json.JSONDecodeError as e:
+            self._log(f"      ⚠ JSON parse failed: {e}")
+            self._log(f"      Response preview: {response[:200]}...")
+            return items
         except Exception as e:
             self._log(f"      ⚠ Condensation failed: {e}, keeping originals")
             return items
@@ -817,19 +895,27 @@ Example format: ["Based on items 1-3: [condensed content]", "From items 4, 7: [c
     
     def export_dataset(
         self, 
-        output_path: str,
-        format: str = "alpaca"
+        output_path: str = None,
+        format: str = "alpaca",
+        session_id: str = None
     ) -> str:
         """
-        Phase 4: Export training dataset to file.
+        Phase 4: Export training dataset to file with timestamp.
         
         Args:
-            output_path: Path to save the dataset
+            output_path: Path to save the dataset (if None, auto-generates timestamped name)
             format: Output format - 'alpaca', 'sharegpt', or 'full'
+            session_id: Optional session ID to link this dataset to a learning session
         
         Returns:
             Path to the saved file
         """
+        # Generate timestamped filename if not provided
+        if output_path is None:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"{self.actor_name}_lora_dataset_{timestamp}.jsonl"
+            output_path = str(self.output_dir / filename)
+        
         # Ensure output directory exists
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -854,7 +940,7 @@ Example format: ["Based on items 1-3: [condensed content]", "From items 4, 7: [c
         
         return str(output_file)
     
-    def _generate_summary(self) -> Dict[str, Any]:
+    def _generate_summary(self, session_id: str = None) -> Dict[str, Any]:
         """Generate a summary of the sleep cycle."""
         
         category_counts = defaultdict(int)
@@ -867,6 +953,7 @@ Example format: ["Based on items 1-3: [condensed content]", "From items 4, 7: [c
         return {
             "actor_name": self.actor_name,
             "generated_at": datetime.now().isoformat(),
+            "session_id": session_id,
             "total_examples": len(self.training_examples),
             "by_category": dict(category_counts),
             "by_source": dict(source_counts),
@@ -948,6 +1035,106 @@ def quick_sleep(actor_name: str = 'template') -> str:
     processor = SleepProcessor(actor_name, verbose=False)
     result = processor.sleep()
     return result.get('output_path', '')
+
+
+def merge_datasets(
+    actor_name: str,
+    dataset_paths: List[str],
+    output_name: str = None
+) -> Dict[str, Any]:
+    """
+    Merge multiple LoRA datasets from different learning sessions.
+    
+    Args:
+        actor_name: Name of the actor
+        dataset_paths: List of paths to .jsonl dataset files to merge
+        output_name: Optional output filename (auto-generates timestamped name if None)
+    
+    Returns:
+        Summary of the merged dataset
+    """
+    from src.utils.knowledge_base import get_array_dir
+    
+    array_dir = get_array_dir()
+    lora_dir = array_dir / 'data' / actor_name / 'lora_training'
+    lora_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Collect all examples from source datasets
+    all_examples = []
+    source_summaries = []
+    
+    for dataset_path in dataset_paths:
+        path = Path(dataset_path)
+        if not path.exists():
+            continue
+        
+        # Load examples
+        with open(path, 'r') as f:
+            for line in f:
+                try:
+                    example = json.loads(line)
+                    all_examples.append(example)
+                except json.JSONDecodeError:
+                    continue
+        
+        # Load summary if exists
+        summary_path = path.with_suffix('.summary.json')
+        if summary_path.exists():
+            with open(summary_path, 'r') as f:
+                summary = json.load(f)
+                source_summaries.append({
+                    'filename': path.name,
+                    'generated_at': summary.get('generated_at'),
+                    'examples': summary.get('total_examples', 0)
+                })
+    
+    # Remove duplicates based on instruction+output combination
+    seen = set()
+    unique_examples = []
+    for example in all_examples:
+        key = hashlib.md5(
+            (example.get('instruction', '') + example.get('output', '')).encode()
+        ).hexdigest()
+        if key not in seen:
+            seen.add(key)
+            unique_examples.append(example)
+    
+    # Generate output filename
+    if output_name is None:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_name = f"{actor_name}_merged_dataset_{timestamp}.jsonl"
+    
+    output_path = lora_dir / output_name
+    
+    # Write merged dataset
+    with open(output_path, 'w') as f:
+        for example in unique_examples:
+            f.write(json.dumps(example) + '\n')
+    
+    # Create merged summary
+    merged_summary = {
+        'actor_name': actor_name,
+        'generated_at': datetime.now().isoformat(),
+        'type': 'merged',
+        'total_examples': len(unique_examples),
+        'source_datasets': source_summaries,
+        'merged_from': [Path(p).name for p in dataset_paths],
+        'duplicates_removed': len(all_examples) - len(unique_examples)
+    }
+    
+    # Save summary
+    summary_path = output_path.with_suffix('.summary.json')
+    with open(summary_path, 'w') as f:
+        json.dump(merged_summary, f, indent=2)
+    
+    return {
+        'success': True,
+        'output_path': str(output_path),
+        'total_examples': len(unique_examples),
+        'sources_merged': len(dataset_paths),
+        'duplicates_removed': len(all_examples) - len(unique_examples),
+        'summary': merged_summary
+    }
 
 
 if __name__ == "__main__":

@@ -1065,12 +1065,46 @@
 
                                 <!-- Data Available -->
                                 <div v-else class="space-y-4">
+                                    <!-- Merge Controls -->
+                                    <div v-if="sleepStatus.datasets && sleepStatus.datasets.length > 1" class="bg-gray-700 rounded-lg p-4 mb-4">
+                                        <div class="flex items-center justify-between">
+                                            <div>
+                                                <h5 class="font-medium text-purple-400 flex items-center">
+                                                    <span class="mr-2">🔀</span> Merge Datasets
+                                                </h5>
+                                                <p class="text-xs text-gray-400 mt-1">
+                                                    Select multiple datasets to merge into one. Duplicates will be removed automatically.
+                                                </p>
+                                            </div>
+                                            <button 
+                                                @click="mergeSelectedDatasets"
+                                                :disabled="selectedDatasets.length < 2 || mergeLoading"
+                                                class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                                            >
+                                                <span v-if="mergeLoading" class="animate-spin">⏳</span>
+                                                <span v-else>🔀</span>
+                                                <span>[[ mergeLoading ? 'Merging...' : 'Merge Selected (' + selectedDatasets.length + ')' ]]</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <div v-for="dataset in sleepStatus.datasets" :key="dataset.filename"
                                          class="bg-gray-700 rounded-lg p-4">
                                         <div class="flex justify-between items-start">
-                                            <div>
-                                                <h5 class="font-medium text-purple-400">[[ dataset.filename ]]</h5>
-                                                <p class="text-xs text-gray-400 mt-1">[[ dataset.path ]]</p>
+                                            <div class="flex items-start space-x-3 flex-1">
+                                                <!-- Checkbox for merge selection -->
+                                                <label v-if="sleepStatus.datasets.length > 1" class="flex items-center cursor-pointer mt-1">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        :value="dataset.filename"
+                                                        v-model="selectedDatasets"
+                                                        class="rounded bg-gray-600 border-gray-500 text-purple-600 focus:ring-purple-500"
+                                                    >
+                                                </label>
+                                                <div class="flex-1">
+                                                    <h5 class="font-medium text-purple-400">[[ dataset.filename ]]</h5>
+                                                    <p class="text-xs text-gray-400 mt-1">[[ dataset.path ]]</p>
+                                                </div>
                                             </div>
                                             <span class="bg-green-600/20 text-green-400 px-3 py-1 rounded-full text-sm">
                                                 [[ dataset.examples ]] examples
@@ -1616,6 +1650,8 @@
                         format: 'alpaca'
                     },
                     lastSleepResult: null,
+                    selectedDatasets: [],
+                    mergeLoading: false,
                     
                     // Remote Training
                     trainerStatus: { enabled: false, connected: false },
@@ -1967,6 +2003,41 @@
                     }
                     
                     this.sleepLoading = false;
+                },
+                
+                async mergeSelectedDatasets() {
+                    if (!this.selectedActor || this.mergeLoading || this.selectedDatasets.length < 2) return;
+                    
+                    this.mergeLoading = true;
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/datasets/merge`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                dataset_files: this.selectedDatasets
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        
+                        if (data.error) {
+                            alert('Merge failed: ' + data.error);
+                        } else {
+                            // Show success message
+                            alert(data.message + '\n\n' + 
+                                  'Total examples: ' + data.result.total_examples + '\n' +
+                                  'Duplicates removed: ' + data.result.duplicates_removed);
+                            
+                            // Clear selection and refresh
+                            this.selectedDatasets = [];
+                            await this.loadSleepStatus();
+                        }
+                    } catch (e) {
+                        alert('Merge failed: ' + e.message);
+                    }
+                    
+                    this.mergeLoading = false;
                 },
                 
                 // Remote Training Methods
