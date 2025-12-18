@@ -302,6 +302,14 @@ def api_chat(actor_name):
     
     try:
         from src.utils.chat_utils import get_chat_completion
+        from src.utils.knowledge_base import KnowledgeBase
+        from src.thoughts.subconscious import SilvertongueSubconscious
+        from src.thoughts.conscious import SilvertongueConscious
+        
+        # Initialize knowledge base and thought processors
+        kb = KnowledgeBase(actor_name)
+        subconscious = SilvertongueSubconscious(kb)
+        conscious = SilvertongueConscious(kb)
         
         details = get_actor_details(actor_name)
         
@@ -314,70 +322,25 @@ def api_chat(actor_name):
         recent_learnings = details.get('recent_learnings', [])[:10]
         
         if use_cognitive:
-            # Lightweight cognitive mode - quick routing + selective knowledge
-            # Step 1: Quick route to understand the request
-            route_prompt = """Analyze this request and return JSON:
-{"domain": "topic area", "intent": "what user wants", "needs_knowledge": true/false, "complexity": "simple/moderate/complex"}
-Return ONLY valid JSON."""
+            # PROPER COGNITIVE MODE: Use subconscious -> conscious pipeline
             
-            route_messages = [
-                {"role": "system", "content": "You are a fast request router. Return only JSON."},
-                {"role": "user", "content": f"{route_prompt}\n\nRequest: {message}"}
-            ]
+            # Step 1: Subconscious analysis
+            analysis = subconscious.analyze_request(message)
             
-            try:
-                route_response = get_chat_completion(route_messages, temperature=0.1)
-                import json
-                routing = json.loads(route_response.replace("```json", "").replace("```", "").strip())
-            except:
-                routing = {"domain": "general", "intent": "chat", "needs_knowledge": False, "complexity": "simple"}
+            # Step 2: Conscious processing with full context
+            conscious_prompt = conscious.construct_conscious_prompt(analysis)
             
-            # Step 2: Build context-aware prompt with full knowledge base
-            system_prompt = f"""You are {actor_name}, an AI assistant with accumulated knowledge and experience.
+            # Step 3: Build final response with full knowledge context
+            system_prompt = f"""{conscious_prompt}
 
-DOMAIN: {routing.get('domain', 'General')}
+You are responding to a chat message. Draw upon:
+- Your principles and values
+- The relevant experiences and knowledge identified by your subconscious
+- Your accumulated learning
 
-YOUR KNOWLEDGE BASE:
-You have learned and accumulated the following knowledge through study and experience. Use this knowledge to inform your responses.
+User's message: {message}
 
-CORE KNOWLEDGE ({len(core_knowledge)} items):
-{chr(10).join(f'- {k}' for k in core_knowledge[:20]) if core_knowledge else '- Building knowledge base...'}
-
-VALUES:
-{chr(10).join(f'- {v}' for v in values) if values else '- Be helpful'}
-
-PRINCIPLES:
-{chr(10).join(f'- {p}' for p in principles) if principles else '- Think clearly'}"""
-
-            # Add supporting knowledge if available
-            if supporting_knowledge:
-                system_prompt += f"\n\nSUPPORTING KNOWLEDGE:\n" + "\n".join(f"- {k[:200]}" for k in supporting_knowledge[:10])
-            
-            # Add recent learnings to show what was studied recently
-            if recent_learnings:
-                system_prompt += f"\n\nRECENT LEARNINGS (from study sessions):\n" + "\n".join(
-                    f"- {l.get('topic', 'Unknown')}: {l.get('summary', '')[:150]}" 
-                    for l in recent_learnings[:5] if isinstance(l, dict)
-                )
-            
-            # Add relevant experiences based on context
-            if experiences:
-                # Try to find relevant experiences
-                relevant_exp = []
-                if message:
-                    msg_lower = message.lower()
-                    for exp in experiences:
-                        if any(word in exp.lower() for word in msg_lower.split() if len(word) > 3):
-                            relevant_exp.append(exp)
-                
-                # If no relevant found, show recent experiences
-                if not relevant_exp:
-                    relevant_exp = experiences[:5]
-                
-                if relevant_exp:
-                    system_prompt += f"\n\nRELEVANT EXPERIENCES:\n" + "\n".join(f"- {e[:200]}" for e in relevant_exp[:5])
-
-            system_prompt += "\n\nIMPORTANT: Draw upon your knowledge base when answering. If you have learned something relevant, mention it. Be aware of what you know and don't know."
+Provide a thoughtful, helpful response that reflects your knowledge and character."""
 
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(clean_history[-10:])
@@ -405,23 +368,30 @@ PRINCIPLES:
                 'response': response,
                 'actor': actor_name,
                 'cognitive': True,
-                'analysis': routing,
-                'thought_history': [{"step": "Quick Route", "content": f"Domain: {routing.get('domain')}, Intent: {routing.get('intent')}"}]
+                'analysis': analysis,
+                'thought_history': [
+                    {"step": "Subconscious Analysis", "content": f"Domain: {analysis.get('domain', 'Unknown')}"},
+                    {"step": "Conscious Processing", "content": "Applied principles and relevant knowledge"}
+                ]
             })
         else:
-            # Simple direct chat (no cognitive processing) - but still include knowledge
-            system_prompt = f"""You are {actor_name}, an AI assistant with accumulated knowledge.
+            # Non-cognitive mode: Still use subconscious for context but simpler processing
+            analysis = subconscious.analyze_request(message)
+            
+            system_prompt = f"""You are {actor_name}.
 
-YOUR KNOWLEDGE BASE:
-{chr(10).join(f'- {k}' for k in core_knowledge[:15]) if core_knowledge else '- Building knowledge base...'}
+Domain: {analysis.get('domain', 'General')}
 
-VALUES:
-{chr(10).join(f'- {v}' for v in values[:5]) if values else '- Be helpful and accurate'}
+Relevant Knowledge:
+{chr(10).join(f'- {k}' for k in analysis.get('relevant_knowledge', [])[:10])}
 
-PRINCIPLES:
-{chr(10).join(f'- {p}' for p in principles[:5]) if principles else '- Think step by step'}
+Relevant Experiences:
+{chr(10).join(f'- {e}' for e in analysis.get('relevant_experiences', [])[:5])}
 
-Respond naturally while drawing upon your knowledge base. Mention relevant knowledge when applicable."""
+Principles:
+{chr(10).join(f'- {p}' for p in kb.get_principles()[:10])}
+
+Respond naturally and helpfully."""
 
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(clean_history[-10:])
