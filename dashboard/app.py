@@ -997,6 +997,47 @@ def get_trainer_url():
     return f"http://{trainer['host']}:{trainer['port']}"
 
 
+def translate_path_for_server(local_path: str) -> str:
+    """
+    Translate a local Mac path to the server's view inside the Docker container.
+    
+    Mac mount:     /Users/ruihe/mnt/silvertongueArray/array/data/...
+    DGX host:      /mnt/silvertongueArray/array/data/...
+    Docker mount:  /datasets/...  (DATASET_DIR is mounted to /datasets)
+    
+    The launch script mounts: -v "$DATASET_DIR":/datasets
+    Where DATASET_DIR=/mnt/silvertongueArray/array/data
+    """
+    # Get the local array_dir from config
+    config = load_config()
+    local_array_dir = config.get('array_dir', '')
+    
+    # The Docker container mounts DATASET_DIR (/mnt/silvertongueArray/array/data) to /datasets
+    # So /mnt/silvertongueArray/array/data/steve/... becomes /datasets/steve/...
+    
+    # First, convert Mac path to what the DGX host sees
+    # Mac: /Users/ruihe/mnt/silvertongueArray/array/...
+    # DGX: /mnt/silvertongueArray/array/...
+    mac_mount = '/Users/ruihe/mnt/silvertongueArray/array'
+    dgx_mount = '/mnt/silvertongueArray/array'
+    
+    server_path = local_path
+    if local_array_dir and local_path.startswith(local_array_dir):
+        server_path = local_path.replace(local_array_dir, dgx_mount)
+    elif local_path.startswith(mac_mount):
+        server_path = local_path.replace(mac_mount, dgx_mount)
+    
+    # Now convert DGX host path to Docker container path
+    # The DATASET_DIR (/mnt/silvertongueArray/array/data) is mounted as /datasets
+    dgx_data_dir = '/mnt/silvertongueArray/array/data'
+    docker_data_dir = '/datasets'
+    
+    if server_path.startswith(dgx_data_dir):
+        server_path = server_path.replace(dgx_data_dir, docker_data_dir)
+    
+    return server_path
+
+
 @app.route('/api/trainer/status', methods=['GET'])
 def api_trainer_status():
     """Check if the remote trainer server is available."""
@@ -1068,38 +1109,66 @@ def api_start_training(actor_name):
             'hint': 'Enable trainer_server in config.json or set up DGX Spark'
         }), 400
     
-    # Check if training data exists
+    # Check if training data exists - look for various dataset patterns
     array_dir = get_array_dir()
     lora_dir = array_dir / 'data' / actor_name / 'lora_training'
-    train_file = lora_dir / f"{actor_name}_lora_train.jsonl"
     
-    if not train_file.exists():
+    # Find the best dataset file (prefer merged, then latest timestamped, then basic)
+    train_file = None
+    
+    # Check request for specific dataset
+    data = request.json or {}
+    requested_dataset = data.get('dataset_file')
+    
+    if requested_dataset:
+        train_file = lora_dir / requested_dataset
+    else:
+        # Auto-find best dataset
+        # 1. Look for merged datasets (most comprehensive)
+        merged_files = sorted(lora_dir.glob(f'{actor_name}_merged_*.jsonl'), reverse=True)
+        if merged_files:
+            train_file = merged_files[0]
+        else:
+            # 2. Look for timestamped datasets
+            timestamped = sorted(lora_dir.glob(f'{actor_name}_lora_dataset_*.jsonl'), reverse=True)
+            if timestamped:
+                train_file = timestamped[0]
+            else:
+                # 3. Look for basic dataset
+                basic = lora_dir / f"{actor_name}_lora_dataset.jsonl"
+                if basic.exists():
+                    train_file = basic
+                else:
+                    # 4. Fallback to old naming
+                    old_style = lora_dir / f"{actor_name}_lora_train.jsonl"
+                    if old_style.exists():
+                        train_file = old_style
+    
+    if not train_file or not train_file.exists():
         return jsonify({
             'error': 'No training data found',
-            'hint': 'Run the sleep cycle first to generate training data'
+            'hint': 'Run the sleep cycle first to generate training data',
+            'searched_dir': str(lora_dir)
         }), 404
     
-    # Get training parameters from request
-    data = request.json or {}
+    # Translate local path to server path
+    server_dataset_path = translate_path_for_server(str(train_file))
     
+    # Build training config - use server's expected field names
     training_config = {
         'actor_name': actor_name,
-        'train_file': str(train_file),
-        'base_model': data.get('base_model', 'meta-llama/Llama-3.2-3B-Instruct'),
-        'lora_r': data.get('lora_r', 16),
-        'lora_alpha': data.get('lora_alpha', 32),
-        'lora_dropout': data.get('lora_dropout', 0.05),
-        'learning_rate': data.get('learning_rate', 2e-4),
-        'num_epochs': data.get('num_epochs', 3),
-        'batch_size': data.get('batch_size', 4),
-        'gradient_accumulation_steps': data.get('gradient_accumulation_steps', 4),
-        'max_seq_length': data.get('max_seq_length', 2048),
+        'dataset_path': server_dataset_path,  # Use translated path for server
+        'config': {
+            'r': data.get('lora_r', 32),  # Server uses 'r' not 'lora_r'
+            'lora_alpha': data.get('lora_alpha', 64),
+            'lora_dropout': data.get('lora_dropout', 0.05),
+            'learning_rate': data.get('learning_rate', 2e-4),
+            'num_epochs': data.get('num_epochs', 3),
+            'batch_size': data.get('batch_size', 4),
+            'gradient_accumulation_steps': data.get('gradient_accumulation_steps', 4),
+            'max_seq_length': data.get('max_seq_length', 2048),
+        }
     }
-    
-    # Check for validation file
-    val_file = lora_dir / f"{actor_name}_lora_val.jsonl"
-    if val_file.exists():
-        training_config['val_file'] = str(val_file)
     
     try:
         import requests
@@ -1114,8 +1183,9 @@ def api_start_training(actor_name):
             return jsonify({
                 'success': True,
                 'job_id': result.get('job_id'),
-                'status': result.get('status'),
+                'status': 'started',
                 'message': f'Training job submitted for {actor_name}',
+                'dataset': str(train_file.name),
                 'config': training_config
             })
         else:
