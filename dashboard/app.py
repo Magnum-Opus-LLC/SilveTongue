@@ -359,6 +359,7 @@ Provide a thoughtful, helpful response that reflects your knowledge and characte
             else:
                 messages.append({"role": "user", "content": message})
             
+            # Use base model from config (LoRA adapters used when available)
             response = get_chat_completion(messages, temperature=0.7)
             
             # Save chat history
@@ -413,6 +414,7 @@ Respond naturally and helpfully."""
             else:
                 messages.append({"role": "user", "content": message})
             
+            # Use base model from config
             response = get_chat_completion(messages, temperature=0.7)
             
             # Save chat history

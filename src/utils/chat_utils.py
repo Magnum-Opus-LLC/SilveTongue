@@ -21,13 +21,14 @@ def load_config():
         return json.load(f)
 
 
-def get_chat_completion(messages, temperature=0.7):
+def get_chat_completion(messages, temperature=0.7, model_override=None):
     """
     Perform chat completion using the configured host and model.
 
     Args:
         messages (list): List of message dictionaries (role, content).
         temperature (float): Sampling temperature.
+        model_override (str): Optional model name to use.
 
     Returns:
         str: The content of the response message.
@@ -36,7 +37,7 @@ def get_chat_completion(messages, temperature=0.7):
 
     api_host = config.get('apiHost')
     api_key = config.get('apiKey', 'EMPTY')  # Default to EMPTY if not provided
-    model = config.get('model')
+    model = model_override or config.get('model')
 
     if not api_host:
         raise ValueError("apiHost not defined in config.json")
@@ -49,26 +50,18 @@ def get_chat_completion(messages, temperature=0.7):
     # Initialize OpenAI client with custom base_url
     client = OpenAI(
         base_url=base_url,
-        api_key=api_key
+        api_key=api_key,
     )
 
-    # Some local servers might not need /v1 if it's already in the host,
-    # but standard convention for base_url in openai python lib is usually the root.
-    # If the user provided "http://...:8355", it often needs "/v1".
-    # I will assume the user provided the base and I might need to adjust or just pass it.
-    # Let's stick to passing it as is, but often `v1` is required.
-    # I'll check if the user's host ends in /v1.
-
-    # Actually, let's just use the apiHost as base_url.
-    # If it fails, the user can adjust the config.
-
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature
-    )
-
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        raise RuntimeError(f"Failed to get chat completion: {e}")
 
 
 def get_model_context_window(model_name: str = None) -> int:
