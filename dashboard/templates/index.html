@@ -1246,17 +1246,14 @@
                                 <div v-if="trainerStatus.connected && sleepStatus.has_data" class="space-y-4">
                                     <h4 class="text-sm font-semibold text-gray-300">Training Configuration</h4>
                                     
+                                    <!-- Server Base Model Info -->
+                                    <div class="mb-4 p-3 bg-gray-700/50 rounded-lg">
+                                        <label class="block text-xs text-gray-400 mb-1">Base Model (Server Config)</label>
+                                        <div class="text-sm text-cyan-400 font-mono">[[ trainerStatus.base_model || 'Loading...' ]]</div>
+                                        <p class="text-xs text-gray-500 mt-1">Model configured on the trainer server</p>
+                                    </div>
+                                    
                                     <div class="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label class="block text-xs text-gray-400 mb-1">Base Model</label>
-                                            <select v-model="trainingConfig.base_model" 
-                                                    class="w-full bg-gray-700 border-gray-600 rounded-lg px-3 py-2 text-sm">
-                                                <option value="meta-llama/Llama-3.2-3B-Instruct">Llama 3.2 3B Instruct</option>
-                                                <option value="meta-llama/Llama-3.2-1B-Instruct">Llama 3.2 1B Instruct</option>
-                                                <option value="mistralai/Mistral-7B-Instruct-v0.3">Mistral 7B Instruct</option>
-                                                <option value="Qwen/Qwen2.5-7B-Instruct">Qwen 2.5 7B Instruct</option>
-                                            </select>
-                                        </div>
                                         <div>
                                             <label class="block text-xs text-gray-400 mb-1">Epochs</label>
                                             <input type="number" v-model="trainingConfig.num_epochs" min="1" max="10"
@@ -1665,9 +1662,8 @@
                     mergeLoading: false,
                     
                     // Remote Training
-                    trainerStatus: { enabled: false, connected: false },
+                    trainerStatus: { enabled: false, connected: false, base_model: null },
                     trainingConfig: {
-                        base_model: 'meta-llama/Llama-3.2-3B-Instruct',
                         num_epochs: 3,
                         lora_r: 16,
                         lora_alpha: 32,
@@ -2125,7 +2121,6 @@
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                base_model: this.trainingConfig.base_model,
                                 num_epochs: parseInt(this.trainingConfig.num_epochs),
                                 lora_r: parseInt(this.trainingConfig.lora_r),
                                 lora_alpha: parseInt(this.trainingConfig.lora_alpha),

@@ -1057,6 +1057,7 @@ def api_trainer_status():
             return jsonify({
                 'enabled': True,
                 'connected': True,
+                'base_model': data.get('base_model', 'Unknown'),
                 'server': data,
                 'url': get_trainer_url()
             })
