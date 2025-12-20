@@ -55,15 +55,20 @@ nohup docker run \
         --local-dir-use-symlinks False
     fi
 
-    # Auto-discovery for LoRA adapters
+    # Auto-discovery for LoRA adapters (only valid ones with adapter_config.json)
     LORA_ARGS=()
     if [ -d "/lora_adapters" ]; then
       shopt -s nullglob
       for d in /lora_adapters/*; do
         if [ -d "$d" ]; then
           name="$(basename "$d")"
-          LORA_ARGS+=("--lora-modules" "${name}=${d}")
-          echo "[INFO] Found LoRA adapter: ${name}"
+          # Only add if it has adapter_config.json (valid LoRA adapter)
+          if [ -f "$d/adapter_config.json" ]; then
+            LORA_ARGS+=("--lora-modules" "${name}=${d}")
+            echo "[INFO] Found valid LoRA adapter: ${name}"
+          else
+            echo "[WARN] Skipping ${name} - not a valid LoRA adapter (missing adapter_config.json)"
+          fi
         fi
       done
     fi

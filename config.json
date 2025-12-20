@@ -4,6 +4,7 @@
     "model": "qwen2_5",
     "max_tokens": 32768,
     "array_dir": "/Users/ruihe/mnt/silvertongueArray/array",
+    "lora_adapters_dir": "/Users/ruihe/mnt/silvertongueArray/lora_adapters",
     "trainer_server": {
         "host": "192.168.1.201",
         "port": 5050,

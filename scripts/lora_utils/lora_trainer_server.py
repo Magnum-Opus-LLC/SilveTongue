@@ -38,6 +38,27 @@ active_jobs = {}
 completed_jobs = {}
 
 
+def get_next_version(actor_name: str) -> str:
+    """Get the next version number for an actor's adapter (v1, v2, etc.)."""
+    actor_dir = LORA_OUTPUT_DIR / actor_name
+    if not actor_dir.exists():
+        return "v1"
+    
+    existing_versions = []
+    for item in actor_dir.iterdir():
+        if item.is_dir() and item.name.startswith('v'):
+            try:
+                version_num = int(item.name[1:])
+                existing_versions.append(version_num)
+            except ValueError:
+                pass
+    
+    if not existing_versions:
+        return "v1"
+    
+    return f"v{max(existing_versions) + 1}"
+
+
 def get_default_lora_config():
     """Default LoRA hyperparameters optimized for Qwen2.5-VL on B200."""
     return {
@@ -167,8 +188,11 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
     active_jobs[job_id]["status"] = "training"
     active_jobs[job_id]["total_steps"] = len(dataset) * config["num_epochs"] // (config["batch_size"] * config["gradient_accumulation_steps"])
     
-    output_dir = LORA_OUTPUT_DIR / actor_name
+    # Determine version number for this training run
+    version = get_next_version(actor_name)
+    output_dir = LORA_OUTPUT_DIR / actor_name / version
     output_dir.mkdir(parents=True, exist_ok=True)
+    active_jobs[job_id]["version"] = version
     
     # Training arguments optimized for Blackwell
     training_args = TrainingArguments(
@@ -213,16 +237,16 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
     active_jobs[job_id]["progress"] = 95
     active_jobs[job_id]["status"] = "saving"
     
-    # Save the LoRA adapter
-    model.save_pretrained_merged(
-        str(output_dir),
-        tokenizer,
-        save_method="lora",
-    )
+    # Save ONLY the LoRA adapter (not merged model)
+    # Use save_pretrained() which saves just the adapter weights (~50-100MB)
+    # NOT save_pretrained_merged() which saves the full merged model (14GB+)
+    model.save_pretrained(str(output_dir))
+    tokenizer.save_pretrained(str(output_dir))
     
     # Save training info
     info = {
         "actor": actor_name,
+        "version": version,
         "base_model": BASE_MODEL,
         "dataset": str(dataset_path),
         "config": config,
@@ -307,8 +331,11 @@ def train_with_peft(job_id: str, actor_name: str, dataset_path: Path, config: di
     active_jobs[job_id]["progress"] = 30
     active_jobs[job_id]["status"] = "training"
     
-    output_dir = LORA_OUTPUT_DIR / actor_name
+    # Determine version number for this training run
+    version = get_next_version(actor_name)
+    output_dir = LORA_OUTPUT_DIR / actor_name / version
     output_dir.mkdir(parents=True, exist_ok=True)
+    active_jobs[job_id]["version"] = version
     
     training_args = TrainingArguments(
         output_dir=str(output_dir / "checkpoints"),
@@ -341,6 +368,7 @@ def train_with_peft(job_id: str, actor_name: str, dataset_path: Path, config: di
     # Save info
     info = {
         "actor": actor_name,
+        "version": version,
         "base_model": BASE_MODEL,
         "dataset": str(dataset_path),
         "config": config,
@@ -504,6 +532,117 @@ def list_adapters():
                     adapters.append(adapter_info)
     
     return jsonify({"adapters": adapters})
+
+
+@app.route("/api/models", methods=["GET"])
+def list_models():
+    """
+    List all trained LoRA models/adapters.
+    Returns format expected by dashboard: {models: [{actor_name, adapter_path, info, is_valid}, ...]}
+    """
+    models = []
+    
+    if LORA_OUTPUT_DIR.exists():
+        for adapter_dir in LORA_OUTPUT_DIR.iterdir():
+            if adapter_dir.is_dir():
+                info_file = adapter_dir / "training_info.json"
+                adapter_config = adapter_dir / "adapter_config.json"
+                
+                # Check if this is a valid adapter directory (has training_info or adapter_config)
+                if adapter_config.exists() or info_file.exists():
+                    # is_valid = has adapter_config.json (true LoRA adapter, not merged model)
+                    is_valid = adapter_config.exists()
+                    
+                    model_info = {
+                        "actor_name": adapter_dir.name,
+                        "adapter_path": str(adapter_dir),
+                        "is_valid": is_valid,
+                        "info": {}
+                    }
+                    
+                    if info_file.exists():
+                        try:
+                            with open(info_file) as f:
+                                model_info["info"] = json.load(f)
+                        except json.JSONDecodeError:
+                            pass
+                    
+                    # Add base model info if available
+                    if "base_model" not in model_info["info"]:
+                        model_info["info"]["base_model"] = BASE_MODEL
+                    
+                    models.append(model_info)
+    
+    return jsonify({"models": models})
+
+
+@app.route("/api/models/<model_name>/rename", methods=["POST"])
+def rename_model(model_name):
+    """Rename a trained LoRA adapter."""
+    import shutil
+    import re
+    
+    data = request.json
+    new_name = data.get("new_name", "").strip()
+    
+    if not new_name:
+        return jsonify({"error": "new_name is required"}), 400
+    
+    # Validate new name
+    if not re.match(r'^[a-zA-Z0-9_-]+$', new_name):
+        return jsonify({"error": "Invalid name. Use only letters, numbers, underscores, and hyphens."}), 400
+    
+    old_path = LORA_OUTPUT_DIR / model_name
+    new_path = LORA_OUTPUT_DIR / new_name
+    
+    if not old_path.exists():
+        return jsonify({"error": f"Model '{model_name}' not found"}), 404
+    
+    if new_path.exists():
+        return jsonify({"error": f"Model '{new_name}' already exists"}), 409
+    
+    try:
+        # Rename the directory
+        shutil.move(str(old_path), str(new_path))
+        
+        # Update training_info.json if it exists
+        info_file = new_path / "training_info.json"
+        if info_file.exists():
+            with open(info_file, "r") as f:
+                info = json.load(f)
+            info["actor"] = new_name
+            info["renamed_from"] = model_name
+            with open(info_file, "w") as f:
+                json.dump(info, f, indent=2)
+        
+        return jsonify({
+            "success": True,
+            "old_name": model_name,
+            "new_name": new_name,
+            "path": str(new_path)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/models/<model_name>", methods=["DELETE"])
+def delete_model(model_name):
+    """Delete a trained LoRA adapter."""
+    import shutil
+    
+    model_path = LORA_OUTPUT_DIR / model_name
+    
+    if not model_path.exists():
+        return jsonify({"error": f"Model '{model_name}' not found"}), 404
+    
+    try:
+        shutil.rmtree(str(model_path))
+        return jsonify({
+            "success": True,
+            "deleted": model_name
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/config", methods=["GET"])

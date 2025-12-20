@@ -367,6 +367,17 @@
                             <div class="flex items-center justify-between mb-4">
                                 <h3 class="text-lg font-semibold">Chat with [[ selectedActor ]]</h3>
                                 <div class="flex items-center space-x-4">
+                                    <!-- LoRA Adapter Selection -->
+                                    <div class="flex items-center space-x-2 text-sm">
+                                        <span class="text-gray-400">🎯 Model:</span>
+                                        <select v-model="selectedAdapter" 
+                                                class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-purple-500">
+                                            <option value="">Base Model</option>
+                                            <option v-for="adapter in availableAdapters" :key="adapter.fullPath" :value="adapter.fullPath">
+                                                [[ adapter.displayName ]]
+                                            </option>
+                                        </select>
+                                    </div>
                                     <button 
                                         @click="loadChatHistory"
                                         class="text-xs text-gray-400 hover:text-white flex items-center space-x-1"
@@ -609,6 +620,19 @@
                                     <!-- Loop Settings -->
                                     <div class="bg-gray-700 rounded-lg p-4">
                                         <h4 class="text-sm font-medium text-gray-300 mb-3">⚙️ Loop Settings</h4>
+                                        
+                                        <!-- Model/Adapter Selection -->
+                                        <div class="mb-3">
+                                            <label class="block text-xs text-gray-400 mb-1">🎯 Model</label>
+                                            <select v-model="learnConfig.adapter" 
+                                                    class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500">
+                                                <option value="">Base Model ([[ config.model || 'default' ]])</option>
+                                                <option v-for="adapter in availableAdapters" :key="adapter.fullPath" :value="adapter.fullPath">
+                                                    [[ adapter.displayName ]]
+                                                </option>
+                                            </select>
+                                        </div>
+                                        
                                         <div class="grid grid-cols-2 gap-3">
                                             <div>
                                                 <label class="block text-xs text-gray-400 mb-1">Max Iterations</label>
@@ -1378,23 +1402,70 @@
 
                             <!-- Trained Models -->
                             <div class="bg-gray-800 rounded-xl p-6">
-                                <h4 class="text-md font-semibold mb-4">🎯 Trained Models</h4>
+                                <h4 class="text-md font-semibold mb-4">🎯 Trained LoRA Adapters</h4>
                                 
                                 <div v-if="trainedModels.length === 0" class="text-center py-8 text-gray-500">
-                                    No trained models yet
+                                    No trained adapters yet for this actor
                                 </div>
 
-                                <div v-else class="space-y-3">
-                                    <div v-for="model in trainedModels" :key="model.adapter_path"
+                                <div v-else class="space-y-4">
+                                    <div v-for="model in trainedModels" :key="model.path"
                                          class="bg-gray-700 rounded-lg p-4">
-                                        <div class="flex justify-between items-start">
-                                            <div>
-                                                <h5 class="font-medium text-purple-400">[[ model.actor_name ]]</h5>
-                                                <p class="text-xs text-gray-400 mt-1 font-mono">[[ model.adapter_path ]]</p>
+                                        <!-- Adapter Header -->
+                                        <div class="flex justify-between items-start mb-3">
+                                            <div class="flex-1">
+                                                <div class="flex items-center space-x-2">
+                                                    <h5 class="font-medium text-purple-400 text-lg">[[ model.nickname || model.name ]]</h5>
+                                                    <span v-if="model.nickname && model.nickname !== model.name" class="text-gray-500 text-xs">([[ model.name ]])</span>
+                                                    <span class="bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded text-xs">
+                                                        [[ model.version_count ]] version[[ model.version_count > 1 ? 's' : '' ]]
+                                                    </span>
+                                                </div>
+                                                <p v-if="model.description" class="text-sm text-gray-400 mt-1">[[ model.description ]]</p>
                                             </div>
-                                            <span class="bg-purple-600/20 text-purple-400 px-2 py-1 rounded text-xs">
-                                                [[ model.info?.base_model?.split('/').pop() || 'Unknown' ]]
-                                            </span>
+                                            <div class="flex items-center space-x-2">
+                                                <button @click="editAdapterNickname(model)" 
+                                                        class="text-gray-400 hover:text-yellow-400 text-sm" title="Edit Nickname">
+                                                    🏷️
+                                                </button>
+                                                <button @click="renameModel(model)" 
+                                                        class="text-gray-400 hover:text-blue-400 text-sm" title="Rename Folder">
+                                                    ✏️
+                                                </button>
+                                                <button @click="deleteModel(model)" 
+                                                        class="text-gray-400 hover:text-red-400 text-sm" title="Delete All Versions">
+                                                    🗑️
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Versions List -->
+                                        <div class="space-y-2 ml-2 border-l-2 border-gray-600 pl-3">
+                                            <div v-for="ver in model.versions" :key="ver.version"
+                                                 class="bg-gray-800 rounded p-3 flex justify-between items-center">
+                                                <div class="flex-1">
+                                                    <div class="flex items-center space-x-2">
+                                                        <span class="font-mono text-sm text-cyan-400">[[ ver.nickname || ver.version ]]</span>
+                                                        <span v-if="ver.is_valid" class="text-green-400 text-xs">✓ Valid</span>
+                                                        <span v-else class="text-yellow-400 text-xs">⚠ Invalid</span>
+                                                        <span v-if="ver.examples" class="text-gray-500 text-xs">[[ ver.examples ]] examples</span>
+                                                    </div>
+                                                    <p class="text-xs text-gray-500 mt-1">
+                                                        <span v-if="ver.created_at">Trained: [[ formatDate(ver.created_at) ]]</span>
+                                                        <span v-if="ver.base_model" class="ml-2">• [[ ver.base_model?.split('/').pop() ]]</span>
+                                                    </p>
+                                                </div>
+                                                <div class="flex items-center space-x-2">
+                                                    <button @click="editVersionNickname(model, ver)" 
+                                                            class="text-gray-400 hover:text-yellow-400 text-xs" title="Version Nickname">
+                                                        🏷️
+                                                    </button>
+                                                    <button @click="deleteVersion(model, ver)" 
+                                                            class="text-gray-400 hover:text-red-400 text-xs" title="Delete Version">
+                                                        🗑️
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1602,6 +1673,9 @@
                     chatLoading: false,
                     useCognitive: true,
                     thoughtProcess: null,
+                    selectedAdapter: '',  // LoRA adapter to use for chat (format: "name/version" or "name" for latest)
+                    availableAdapters: [],  // List of valid LoRA adapters with versions
+                    adapterBook: {},  // Nicknames and metadata for adapters
                     
                     // Learning
                     learnTopic: '',
@@ -1618,7 +1692,8 @@
                         goal_threshold: 85,
                         fetch_pdfs: true,
                         save_session: true,
-                        auto_save: true
+                        auto_save: true,
+                        adapter: ''  // LoRA adapter to use for learning (empty = base model)
                     },
                     learningActive: false,
                     learnLogs: [],
@@ -1745,8 +1820,12 @@
                     this.selectedActor = actor;
                     this.chatHistory = [];
                     this.learnLogs = [];
+                    this.selectedAdapter = '';  // Reset adapter selection
                     
                     await this.loadActorDetails();
+                    
+                    // Load available LoRA adapters for chat
+                    await this.loadTrainedModels();
                     
                     // Fetch loops
                     const loopsRes = await fetch(`/api/actor/${actor}/loops`);
@@ -1860,7 +1939,8 @@
                                 message,
                                 images: images,
                                 history: this.chatHistory.slice(-10),
-                                use_cognitive: this.useCognitive
+                                use_cognitive: this.useCognitive,
+                                adapter: this.selectedAdapter  // LoRA adapter to use
                             })
                         });
                         
@@ -1897,7 +1977,8 @@
                     if (!this.learnTopic.trim() || this.learningActive) return;
                     
                     this.learningActive = true;
-                    this.learnLogs = [`🚀 Starting ${this.learnMode} learning loop...`];
+                    const adapterInfo = this.learnConfig.adapter ? ` with LoRA adapter "${this.learnConfig.adapter}"` : '';
+                    this.learnLogs = [`🚀 Starting ${this.learnMode} learning loop${adapterInfo}...`];
                     
                     try {
                         const res = await fetch(`/api/actor/${this.selectedActor}/learn`, {
@@ -1915,6 +1996,9 @@
                         this.currentLoopId = data.loop_id;
                         this.learnLogs.push(`📝 Loop ID: ${data.loop_id}`);
                         this.learnLogs.push(`⚙️ Config: ${this.learnConfig.max_iterations} iterations, ${this.learnConfig.max_papers_per_search} papers/search, depth ${this.learnConfig.search_depth}`);
+                        if (this.learnConfig.adapter) {
+                            this.learnLogs.push(`🎯 Using LoRA adapter: ${this.learnConfig.adapter}`);
+                        }
                         
                         // Start streaming output
                         this.streamLearningOutput(data.loop_id);
@@ -2102,12 +2186,169 @@
                 
                 async loadTrainedModels() {
                     try {
-                        const res = await fetch('/api/trainer/models');
+                        // Load adapters from local filesystem (NAS mount)
+                        const res = await fetch('/api/adapters');
                         const data = await res.json();
-                        // Filter to current actor's models
-                        this.trainedModels = (data.models || []).filter(m => m.actor_name === this.selectedActor);
+                        const allAdapters = data.adapters || [];
+                        this.adapterBook = data.book || {};
+                        
+                        // Filter to current actor's models for the training tab
+                        this.trainedModels = allAdapters.filter(m => m.name === this.selectedActor);
+                        
+                        // Build flat list of available adapters for chat dropdown
+                        // Each entry is: {name, version, displayName, path, ...}
+                        this.availableAdapters = [];
+                        for (const adapter of allAdapters) {
+                            if (adapter.versions && adapter.versions.length > 0) {
+                                for (const ver of adapter.versions) {
+                                    if (ver.is_valid) {
+                                        const displayName = adapter.nickname || adapter.name;
+                                        const verNickname = ver.nickname || ver.version;
+                                        this.availableAdapters.push({
+                                            name: adapter.name,
+                                            version: ver.version,
+                                            displayName: `${displayName} (${verNickname})`,
+                                            fullPath: `${adapter.name}/${ver.version}`,
+                                            path: ver.path,
+                                            created_at: ver.created_at,
+                                            base_model: ver.base_model,
+                                            examples: ver.examples
+                                        });
+                                    }
+                                }
+                            } else if (adapter.latest_version && adapter.latest_version.is_valid) {
+                                // Legacy flat structure
+                                const displayName = adapter.nickname || adapter.name;
+                                this.availableAdapters.push({
+                                    name: adapter.name,
+                                    version: 'v1',
+                                    displayName: `${displayName} (v1)`,
+                                    fullPath: adapter.name,
+                                    path: adapter.latest_version.path,
+                                    created_at: adapter.latest_version.created_at,
+                                    base_model: adapter.latest_version.base_model,
+                                    examples: adapter.latest_version.examples
+                                });
+                            }
+                        }
                     } catch (e) {
                         this.trainedModels = [];
+                        this.availableAdapters = [];
+                        this.adapterBook = {};
+                    }
+                },
+                
+                async renameModel(model) {
+                    const newName = prompt(`Rename "${model.name}" to:`, model.name);
+                    if (!newName || newName === model.name) return;
+                    
+                    try {
+                        const res = await fetch(`/api/adapters/${model.name}/rename`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ new_name: newName })
+                        });
+                        const data = await res.json();
+                        
+                        if (data.success) {
+                            alert(`Renamed "${model.name}" to "${newName}"`);
+                            await this.loadTrainedModels();
+                        } else {
+                            alert('Rename failed: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        alert('Rename failed: ' + e.message);
+                    }
+                },
+                
+                async deleteModel(model) {
+                    if (!confirm(`Delete adapter "${model.name}" and ALL its versions? This cannot be undone.`)) return;
+                    
+                    try {
+                        const res = await fetch(`/api/adapters/${model.name}`, {
+                            method: 'DELETE'
+                        });
+                        const data = await res.json();
+                        
+                        if (data.success) {
+                            alert(`Deleted "${model.name}"`);
+                            await this.loadTrainedModels();
+                        } else {
+                            alert('Delete failed: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        alert('Delete failed: ' + e.message);
+                    }
+                },
+                
+                async editAdapterNickname(model) {
+                    const newNickname = prompt(`Set nickname for "${model.name}":`, model.nickname || model.name);
+                    if (newNickname === null) return;  // Cancelled
+                    
+                    try {
+                        const res = await fetch('/api/adapters/book', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                adapter_name: model.name,
+                                nickname: newNickname || model.name
+                            })
+                        });
+                        const data = await res.json();
+                        
+                        if (data.success) {
+                            await this.loadTrainedModels();
+                        } else {
+                            alert('Failed to save nickname: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        alert('Failed to save nickname: ' + e.message);
+                    }
+                },
+                
+                async editVersionNickname(model, version) {
+                    const newNickname = prompt(`Set nickname for "${model.name}/${version.version}":`, version.nickname || version.version);
+                    if (newNickname === null) return;  // Cancelled
+                    
+                    try {
+                        const res = await fetch('/api/adapters/book', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                adapter_name: model.name,
+                                version: version.version,
+                                version_nickname: newNickname || version.version
+                            })
+                        });
+                        const data = await res.json();
+                        
+                        if (data.success) {
+                            await this.loadTrainedModels();
+                        } else {
+                            alert('Failed to save nickname: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        alert('Failed to save nickname: ' + e.message);
+                    }
+                },
+                
+                async deleteVersion(model, version) {
+                    if (!confirm(`Delete version "${version.version}" of "${model.name}"? This cannot be undone.`)) return;
+                    
+                    try {
+                        const res = await fetch(`/api/adapters/${model.name}/${version.version}`, {
+                            method: 'DELETE'
+                        });
+                        const data = await res.json();
+                        
+                        if (data.success) {
+                            alert(`Deleted "${model.name}/${version.version}"`);
+                            await this.loadTrainedModels();
+                        } else {
+                            alert('Delete failed: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        alert('Delete failed: ' + e.message);
                     }
                 },
                 

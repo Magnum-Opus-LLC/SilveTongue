@@ -435,7 +435,8 @@ class CognitiveLoop:
             'year_from': None,
             'year_to': None,
             'auto_save': True,
-            'save_session': True  # Save learning session for LoRA
+            'save_session': True,  # Save learning session for LoRA
+            'model_override': None  # LoRA adapter name to use (None = base model)
         }
         
         # Paths - use array_dir from config for data storage
@@ -1498,7 +1499,9 @@ Return JSON:
             {"role": "system", "content": "You are a cognitive assistant helping with learning and knowledge synthesis. Always respond with valid JSON."},
             {"role": "user", "content": prompt}
         ]
-        response = get_chat_completion(messages, temperature=temperature)
+        # Use model_override if configured (for LoRA adapter support)
+        model_override = self.config.get('model_override')
+        response = get_chat_completion(messages, temperature=temperature, model_override=model_override)
         
         # Record thought trace for learning session
         if self.config.get('save_session', True) and self.session_manager.current_session:
