@@ -1,7 +1,7 @@
 {
     "apiHost": "http://192.168.1.201:8355",
     "apiKey": "EMPTY",
-    "model": "qwen2_5vl",
+    "model": "qwen2_5",
     "max_tokens": 32768,
     "array_dir": "/Users/ruihe/mnt/silvertongueArray/array",
     "trainer_server": {

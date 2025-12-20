@@ -51,6 +51,7 @@ docker run \
   --network host \
   -e HF_TOKEN="$HF_TOKEN" \
   -e BASE_MODEL="$BASE_MODEL" \
+  -e PORT="$PORT" \
   -v "$LORA_OUTPUT_DIR":/lora_adapters \
   -v "$DATASET_DIR":/datasets \
   -v "$SCRIPT_DIR":/app \
@@ -70,12 +71,12 @@ docker run \
     pip install -q flask flask-cors
 
     echo "=========================================="
-    echo "Starting LoRA Training Server on port '"$PORT"'..."
+    echo "Starting LoRA Training Server on port $PORT..."
     echo "=========================================="
 
     python lora_trainer_server.py \
-      --port '"$PORT"' \
-      --base-model '"$BASE_MODEL"' \
+      --port $PORT \
+      --base-model "$BASE_MODEL" \
       --lora-output /lora_adapters \
       --dataset-dir /datasets
   '

@@ -357,16 +357,36 @@ def train_with_peft(job_id: str, actor_name: str, dataset_path: Path, config: di
     print(f"[{job_id}] Training completed! Adapter saved to {output_dir}")
 
 
+def check_gpu_available():
+    """Check if GPU is available via PyTorch."""
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+
+
 # ==================== API Routes ====================
 
 @app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint."""
+    gpu_available = check_gpu_available()
+    gpu_name = None
+    if gpu_available:
+        try:
+            import torch
+            gpu_name = torch.cuda.get_device_name(0)
+        except:
+            pass
+    
     return jsonify({
         "status": "healthy",
         "base_model": BASE_MODEL,
         "lora_output_dir": str(LORA_OUTPUT_DIR),
         "active_jobs": len(active_jobs),
+        "gpu_available": gpu_available,
+        "gpu_name": gpu_name,
     })
 
 
