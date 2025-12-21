@@ -50,17 +50,38 @@ nohup docker run \
         --local-dir-use-symlinks False
     fi
 
-    # Auto-discovery for LoRA adapters
+    # Auto-discovery for LoRA adapters (versioned structure)
+    # Structure: /lora_adapters/actor_name/v1/, /lora_adapters/actor_name/v2/, etc.
+    # Registers as: actor_name/v1, actor_name/v2, etc.
     LORA_ARGS=()
     if [ -d "/lora_adapters" ]; then
       shopt -s nullglob
       for d in /lora_adapters/*; do
         if [ -d "$d" ]; then
           name="$(basename "$d")"
-          LORA_ARGS+=("--lora-modules" "${name}=${d}")
-          echo "[INFO] Found LoRA adapter: ${name}"
+          # Skip non-adapter files like adapter_book.json
+          [ "$name" = "adapter_book.json" ] && continue
+          
+          # Check for versioned structure (v1, v2, etc.)
+          found_versions=false
+          for v in "$d"/v*; do
+            if [ -d "$v" ] && [ -f "$v/adapter_config.json" ]; then
+              version="$(basename "$v")"
+              adapter_id="${name}/${version}"
+              LORA_ARGS+=("--lora-modules" "${adapter_id}=${v}")
+              echo "[INFO] Found LoRA adapter: ${adapter_id}"
+              found_versions=true
+            fi
+          done
+          
+          # Also check for legacy flat structure (adapter_config.json directly in actor dir)
+          if [ "$found_versions" = false ] && [ -f "$d/adapter_config.json" ]; then
+            LORA_ARGS+=("--lora-modules" "${name}=${d}")
+            echo "[INFO] Found LoRA adapter (legacy flat): ${name}"
+          fi
         fi
       done
+      echo "[INFO] Total LoRA adapters found: $((${#LORA_ARGS[@]} / 2))"
     fi
 
     # Serve OpenAI-compatible API (optimized for Blackwell B200)

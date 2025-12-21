@@ -612,8 +612,21 @@ class CognitiveLoop:
         
         try:
             while self.state.phase != LoopPhase.COMPLETE:
-                # Execute one phase
-                self.step()
+                # Execute one phase with error handling
+                try:
+                    self.step()
+                except Exception as step_error:
+                    import traceback
+                    self._log(f"\n❌ ERROR in phase {self.state.phase.value}: {step_error}")
+                    self._log(f"   Traceback: {traceback.format_exc()}")
+                    self._log(f"   Attempting to continue to next phase...")
+                    # Try to advance to next phase to avoid infinite loop on same error
+                    try:
+                        self._advance_phase_on_error()
+                    except:
+                        self._log(f"   ❌ Cannot recover, stopping loop")
+                        self.state.phase = LoopPhase.COMPLETE
+                        break
                 
                 # Check if we completed an iteration (just finished EXPAND)
                 if self.state.phase == LoopPhase.SEARCH and self.state.iteration > 1:
@@ -1501,7 +1514,22 @@ Return JSON:
         ]
         # Use model_override if configured (for LoRA adapter support)
         model_override = self.config.get('model_override')
-        response = get_chat_completion(messages, temperature=temperature, model_override=model_override)
+        
+        try:
+            response = get_chat_completion(messages, temperature=temperature, model_override=model_override)
+        except Exception as e:
+            error_msg = str(e)
+            self._log(f"   ⚠️ LLM call failed: {error_msg[:100]}")
+            
+            # If using a LoRA adapter that doesn't exist, fall back to base model
+            if model_override and ('does not exist' in error_msg or '404' in error_msg):
+                self._log(f"   🔄 Falling back to base model (adapter '{model_override}' not available)")
+                try:
+                    response = get_chat_completion(messages, temperature=temperature, model_override=None)
+                except Exception as e2:
+                    raise RuntimeError(f"LLM call failed even with base model: {e2}")
+            else:
+                raise
         
         # Record thought trace for learning session
         if self.config.get('save_session', True) and self.session_manager.current_session:
@@ -1539,6 +1567,25 @@ Return JSON:
                 pass
         
         return {"error": "Could not parse JSON", "raw": response[:500]}
+    
+    def _advance_phase_on_error(self):
+        """Advance to the next phase after an error to avoid getting stuck."""
+        phase_order = [
+            LoopPhase.SEARCH, LoopPhase.STUDY, LoopPhase.THINK,
+            LoopPhase.REFLECT, LoopPhase.UPDATE, LoopPhase.EXPAND
+        ]
+        current_idx = phase_order.index(self.state.phase) if self.state.phase in phase_order else -1
+        if current_idx >= 0 and current_idx < len(phase_order) - 1:
+            self.state.phase = phase_order[current_idx + 1]
+            self._log(f"   ⏭️ Skipping to phase: {self.state.phase.value}")
+        elif self.state.phase == LoopPhase.EXPAND:
+            # Finished iteration, go back to SEARCH
+            self.state.iteration += 1
+            self.state.phase = LoopPhase.SEARCH
+            self._log(f"   ⏭️ Starting new iteration {self.state.iteration}")
+        else:
+            # Unknown state, complete the loop
+            self.state.phase = LoopPhase.COMPLETE
     
     def _log(self, message: str):
         """Log a message if verbose."""

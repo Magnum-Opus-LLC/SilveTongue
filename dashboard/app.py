@@ -234,6 +234,163 @@ def api_add_knowledge(actor_name, knowledge_type):
     return jsonify({'success': success})
 
 
+@app.route('/api/actor/<actor_name>/knowledge/expand', methods=['POST'])
+def api_expand_knowledge(actor_name):
+    """Generate AI expansion for a knowledge item."""
+    data = request.json
+    content = data.get('content', '')
+    knowledge_type = data.get('type', '')
+    
+    if not content:
+        return jsonify({'error': 'No content provided'}), 400
+    
+    try:
+        # Import chat utils
+        from src.utils.chat_utils import get_chat_completion
+        
+        type_labels = {
+            'values': 'value',
+            'principles': 'principle', 
+            'experiences': 'experience',
+            'core_knowledge': 'core knowledge item',
+            'challenges': 'challenge'
+        }
+        type_label = type_labels.get(knowledge_type, 'knowledge item')
+        
+        system_prompt = "You are a knowledgeable expert providing detailed expansions of concepts and ideas. Write in a clear, informative style using markdown formatting."
+        
+        user_prompt = f"""Expand on the following {type_label} with additional context, examples, implications, and practical applications.
+
+{type_label.upper()}: {content}
+
+Provide a comprehensive expansion that includes:
+1. **Deeper Explanation**: What does this really mean in practice?
+2. **Examples**: Concrete examples or scenarios where this applies
+3. **Implications**: What are the broader implications or consequences?
+4. **Related Concepts**: How does this connect to other ideas or principles?
+5. **Practical Applications**: How can this be applied in real situations?"""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        
+        expansion = get_chat_completion(messages, temperature=0.7)
+        
+        return jsonify({'expansion': expansion})
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/actor/<actor_name>/knowledge/save-expansion', methods=['POST'])
+def api_save_knowledge_expansion(actor_name):
+    """Save expansion and notes for a knowledge item."""
+    data = request.json
+    knowledge_type = data.get('type', '')
+    index = data.get('index')
+    original = data.get('original', '')
+    expansion = data.get('expansion', '')
+    notes = data.get('notes', '')
+    
+    if not knowledge_type or index is None:
+        return jsonify({'error': 'Missing type or index'}), 400
+    
+    try:
+        actor_root = get_actor_root(actor_name)
+        array_dir = get_array_dir()
+        
+        # Save expansion to a dedicated expansions file
+        expansions_dir = array_dir / 'data' / actor_name / 'knowledge_expansions'
+        expansions_dir.mkdir(parents=True, exist_ok=True)
+        
+        expansions_file = expansions_dir / f'{knowledge_type}_expansions.json'
+        
+        # Load existing expansions
+        expansions = {}
+        if expansions_file.exists():
+            with open(expansions_file, 'r') as f:
+                expansions = json.load(f)
+        
+        # Save the expansion
+        key = f"{index}_{hash(original) % 10000}"
+        expansions[key] = {
+            'original': original,
+            'expansion': expansion,
+            'notes': notes,
+            'updated_at': datetime.now().isoformat()
+        }
+        
+        with open(expansions_file, 'w') as f:
+            json.dump(expansions, f, indent=2)
+        
+        # If there are notes, also add them as a new experience
+        if notes.strip():
+            experiences_path = actor_root / 'expertise' / 'domain' / 'experience' / 'experiences.yaml'
+            note_content = f"[Note on {knowledge_type}] {notes}"
+            add_to_yaml_list(experiences_path, 'experiences', note_content, 'dashboard-expansion')
+        
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/actor/<actor_name>/knowledge/<knowledge_type>/<int:index>', methods=['DELETE'])
+def api_delete_knowledge(actor_name, knowledge_type, index):
+    """Delete a knowledge item by index."""
+    actor_root = get_actor_root(actor_name)
+    
+    paths = {
+        'values': actor_root / 'characteristic' / 'values.yaml',
+        'principles': actor_root / 'expertise' / 'domain' / 'principal' / 'principles.yaml',
+        'experiences': actor_root / 'expertise' / 'domain' / 'experience' / 'experiences.yaml',
+        'core_knowledge': actor_root / 'expertise' / 'domain' / 'knowledge' / 'core' / 'core_knowledge.yaml',
+        'supporting_knowledge': actor_root / 'expertise' / 'domain' / 'knowledge' / 'supporting' / 'supporting_knowledge.yaml',
+        'challenges': actor_root / 'expertise' / 'domain' / 'challenge' / 'challenges.yaml',
+        'adjustments': actor_root / 'expertise' / 'domain' / 'adjustment' / 'adjustments.yaml'
+    }
+    
+    if knowledge_type not in paths:
+        return jsonify({'error': 'Invalid knowledge type'}), 400
+    
+    file_path = paths[knowledge_type]
+    
+    try:
+        if not file_path.exists():
+            return jsonify({'error': 'Knowledge file not found'}), 404
+        
+        with open(file_path, 'r') as f:
+            data = yaml.safe_load(f) or {}
+        
+        items = data.get(knowledge_type, [])
+        
+        if not isinstance(items, list):
+            return jsonify({'error': 'Invalid knowledge structure'}), 500
+        
+        if index < 0 or index >= len(items):
+            return jsonify({'error': 'Index out of range'}), 400
+        
+        # Remove the item
+        deleted_item = items.pop(index)
+        data[knowledge_type] = items
+        
+        # Save back
+        with open(file_path, 'w') as f:
+            yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+        
+        return jsonify({'success': True, 'deleted': deleted_item})
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/actor/<actor_name>/sessions')
 def api_actor_sessions(actor_name):
     """Get learning sessions for an actor."""
@@ -571,11 +728,12 @@ def api_start_learning(actor_name):
             
             # Adjust iterations based on mode
             if mode == 'nonstop':
-                # Nonstop mode: run until goal achieved (essentially unlimited)
+                # Nonstop mode: truly unlimited - no goal threshold, just keep going
                 result = loop.learn_nonstop(
                     topic, goal, 
-                    goal_threshold=goal_threshold,
-                    max_iterations=9999  # Essentially unlimited, stops when goal achieved
+                    goal_threshold=100,  # Never stop based on goal (would need 100% which never happens)
+                    max_iterations=999999,  # Essentially unlimited
+                    checkpoint_interval=1  # Save state after every iteration
                 )
             elif mode == 'quick':
                 result = loop.learn(topic, goal, max_iterations=1)
@@ -587,7 +745,10 @@ def api_start_learning(actor_name):
             loop_outputs[loop_id].put(f"\n✅ COMPLETE: {json.dumps(result.get('statistics', {}))}")
             
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
             loop_outputs[loop_id].put(f"\n❌ ERROR: {str(e)}")
+            loop_outputs[loop_id].put(f"\n📋 Traceback:\n{error_trace}")
         finally:
             if loop_id in active_loops:
                 del active_loops[loop_id]

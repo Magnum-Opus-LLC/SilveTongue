@@ -793,6 +793,25 @@
                                         <span v-if="!knowledgeRefreshing">Refresh</span>
                                         <span v-else>Refreshing...</span>
                                     </button>
+                                    <!-- Expand/Collapse All Buttons -->
+                                    <div class="flex items-center space-x-1 border-l border-gray-600 pl-4">
+                                        <button 
+                                            @click="expandAllCategories"
+                                            class="px-3 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 text-sm flex items-center space-x-1"
+                                            title="Expand all categories"
+                                        >
+                                            <span>▼</span>
+                                            <span>Expand All</span>
+                                        </button>
+                                        <button 
+                                            @click="collapseAllCategories"
+                                            class="px-3 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 text-sm flex items-center space-x-1"
+                                            title="Collapse all categories"
+                                        >
+                                            <span>▲</span>
+                                            <span>Collapse All</span>
+                                        </button>
+                                    </div>
                                     <span v-if="knowledgeSearch" class="text-sm text-gray-400">
                                         [[ filteredKnowledgeCount ]] results
                                     </span>
@@ -824,86 +843,141 @@
                                 <!-- Values -->
                                 <div v-show="knowledgeFilter === 'all' || knowledgeFilter === 'values'" class="bg-gray-800 rounded-xl p-4">
                                     <h4 class="text-md font-semibold mb-3 flex items-center">
-                                        <span class="text-yellow-400 mr-2">⭐</span> Values
-                                        <span class="ml-auto text-xs text-gray-500">[[ filteredValues.length ]] / [[ actorDetails.values?.length || 0 ]]</span>
+                                        <span @click="openCategoryDetail('values')" class="flex items-center cursor-pointer hover:text-yellow-300 transition-colors flex-1">
+                                            <span class="text-yellow-400 mr-2">⭐</span> Values
+                                            <span class="ml-2 text-xs text-purple-400 opacity-0 hover:opacity-100">📖 View All</span>
+                                        </span>
+                                        <span @click="toggleCategory('values')" class="text-xs text-gray-500 cursor-pointer hover:text-gray-300 transition-transform px-2" :class="{'rotate-180': !expandedCategories.values}">▼</span>
+                                        <span class="text-xs text-gray-500">[[ filteredValues.length ]] / [[ actorDetails.values?.length || 0 ]]</span>
                                     </h4>
-                                    <ul class="space-y-2 max-h-48 overflow-y-auto">
+                                    <ul v-show="expandedCategories.values" class="space-y-2 max-h-64 overflow-y-auto transition-all">
                                         <li v-for="(item, idx) in filteredValues" :key="idx" 
-                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2"
-                                            v-html="highlightSearch(item)">
+                                            @click="expandKnowledge('values', item, idx)"
+                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2 cursor-pointer hover:bg-gray-600 hover:border-yellow-500 border border-transparent transition-all group">
+                                            <div class="flex items-start justify-between">
+                                                <span v-html="highlightSearch(item)" class="flex-1"></span>
+                                                <span class="text-yellow-400 opacity-0 group-hover:opacity-100 ml-2 text-xs">🔍 Expand</span>
+                                            </div>
                                         </li>
                                         <li v-if="!filteredValues.length" class="text-gray-500 text-sm">
                                             [[ knowledgeSearch ? 'No matching values' : 'No values defined' ]]
                                         </li>
                                     </ul>
+                                    <div v-show="!expandedCategories.values && filteredValues.length > 0" class="text-xs text-gray-500 mt-1">
+                                        Click to expand [[ filteredValues.length ]] items
+                                    </div>
                                 </div>
 
                                 <!-- Principles -->
                                 <div v-show="knowledgeFilter === 'all' || knowledgeFilter === 'principles'" class="bg-gray-800 rounded-xl p-4">
                                     <h4 class="text-md font-semibold mb-3 flex items-center">
-                                        <span class="text-purple-400 mr-2">📜</span> Principles
-                                        <span class="ml-auto text-xs text-gray-500">[[ filteredPrinciples.length ]] / [[ actorDetails.principles?.length || 0 ]]</span>
+                                        <span @click="openCategoryDetail('principles')" class="flex items-center cursor-pointer hover:text-purple-300 transition-colors flex-1">
+                                            <span class="text-purple-400 mr-2">📜</span> Principles
+                                            <span class="ml-2 text-xs text-purple-400 opacity-0 hover:opacity-100">📖 View All</span>
+                                        </span>
+                                        <span @click="toggleCategory('principles')" class="text-xs text-gray-500 cursor-pointer hover:text-gray-300 transition-transform px-2" :class="{'rotate-180': !expandedCategories.principles}">▼</span>
+                                        <span class="text-xs text-gray-500">[[ filteredPrinciples.length ]] / [[ actorDetails.principles?.length || 0 ]]</span>
                                     </h4>
-                                    <ul class="space-y-2 max-h-48 overflow-y-auto">
+                                    <ul v-show="expandedCategories.principles" class="space-y-2 max-h-64 overflow-y-auto transition-all">
                                         <li v-for="(item, idx) in filteredPrinciples" :key="idx" 
-                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2"
-                                            v-html="highlightSearch(item)">
+                                            @click="expandKnowledge('principles', item, idx)"
+                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2 cursor-pointer hover:bg-gray-600 hover:border-purple-500 border border-transparent transition-all group">
+                                            <div class="flex items-start justify-between">
+                                                <span v-html="highlightSearch(item)" class="flex-1"></span>
+                                                <span class="text-purple-400 opacity-0 group-hover:opacity-100 ml-2 text-xs">🔍 Expand</span>
+                                            </div>
                                         </li>
                                         <li v-if="!filteredPrinciples.length" class="text-gray-500 text-sm">
                                             [[ knowledgeSearch ? 'No matching principles' : 'No principles defined' ]]
                                         </li>
                                     </ul>
+                                    <div v-show="!expandedCategories.principles && filteredPrinciples.length > 0" class="text-xs text-gray-500 mt-1">
+                                        Click to expand [[ filteredPrinciples.length ]] items
+                                    </div>
                                 </div>
 
                                 <!-- Experiences -->
                                 <div v-show="knowledgeFilter === 'all' || knowledgeFilter === 'experiences'" class="bg-gray-800 rounded-xl p-4">
                                     <h4 class="text-md font-semibold mb-3 flex items-center">
-                                        <span class="text-blue-400 mr-2">💡</span> Experiences
-                                        <span class="ml-auto text-xs text-gray-500">[[ filteredExperiences.length ]] / [[ actorDetails.experiences?.length || 0 ]]</span>
+                                        <span @click="openCategoryDetail('experiences')" class="flex items-center cursor-pointer hover:text-blue-300 transition-colors flex-1">
+                                            <span class="text-blue-400 mr-2">💡</span> Experiences
+                                            <span class="ml-2 text-xs text-purple-400 opacity-0 hover:opacity-100">📖 View All</span>
+                                        </span>
+                                        <span @click="toggleCategory('experiences')" class="text-xs text-gray-500 cursor-pointer hover:text-gray-300 transition-transform px-2" :class="{'rotate-180': !expandedCategories.experiences}">▼</span>
+                                        <span class="text-xs text-gray-500">[[ filteredExperiences.length ]] / [[ actorDetails.experiences?.length || 0 ]]</span>
                                     </h4>
-                                    <ul class="space-y-2 max-h-48 overflow-y-auto">
+                                    <ul v-show="expandedCategories.experiences" class="space-y-2 max-h-64 overflow-y-auto transition-all">
                                         <li v-for="(item, idx) in filteredExperiences" :key="idx" 
-                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2"
-                                            v-html="highlightSearch(item)">
+                                            @click="expandKnowledge('experiences', item, idx)"
+                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2 cursor-pointer hover:bg-gray-600 hover:border-blue-500 border border-transparent transition-all group">
+                                            <div class="flex items-start justify-between">
+                                                <span v-html="highlightSearch(item)" class="flex-1"></span>
+                                                <span class="text-blue-400 opacity-0 group-hover:opacity-100 ml-2 text-xs">🔍 Expand</span>
+                                            </div>
                                         </li>
                                         <li v-if="!filteredExperiences.length" class="text-gray-500 text-sm">
                                             [[ knowledgeSearch ? 'No matching experiences' : 'No experiences recorded' ]]
                                         </li>
                                     </ul>
+                                    <div v-show="!expandedCategories.experiences && filteredExperiences.length > 0" class="text-xs text-gray-500 mt-1">
+                                        Click to expand [[ filteredExperiences.length ]] items
+                                    </div>
                                 </div>
 
                                 <!-- Core Knowledge -->
                                 <div v-show="knowledgeFilter === 'all' || knowledgeFilter === 'core_knowledge'" class="bg-gray-800 rounded-xl p-4">
                                     <h4 class="text-md font-semibold mb-3 flex items-center">
-                                        <span class="text-green-400 mr-2">📚</span> Core Knowledge
-                                        <span class="ml-auto text-xs text-gray-500">[[ filteredCoreKnowledge.length ]] / [[ actorDetails.core_knowledge?.length || 0 ]]</span>
+                                        <span @click="openCategoryDetail('core_knowledge')" class="flex items-center cursor-pointer hover:text-green-300 transition-colors flex-1">
+                                            <span class="text-green-400 mr-2">📚</span> Core Knowledge
+                                            <span class="ml-2 text-xs text-purple-400 opacity-0 hover:opacity-100">📖 View All</span>
+                                        </span>
+                                        <span @click="toggleCategory('core_knowledge')" class="text-xs text-gray-500 cursor-pointer hover:text-gray-300 transition-transform px-2" :class="{'rotate-180': !expandedCategories.core_knowledge}">▼</span>
+                                        <span class="text-xs text-gray-500">[[ filteredCoreKnowledge.length ]] / [[ actorDetails.core_knowledge?.length || 0 ]]</span>
                                     </h4>
-                                    <ul class="space-y-2 max-h-48 overflow-y-auto">
+                                    <ul v-show="expandedCategories.core_knowledge" class="space-y-2 max-h-64 overflow-y-auto transition-all">
                                         <li v-for="(item, idx) in filteredCoreKnowledge" :key="idx" 
-                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2"
-                                            v-html="highlightSearch(item)">
+                                            @click="expandKnowledge('core_knowledge', item, idx)"
+                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2 cursor-pointer hover:bg-gray-600 hover:border-green-500 border border-transparent transition-all group">
+                                            <div class="flex items-start justify-between">
+                                                <span v-html="highlightSearch(item)" class="flex-1"></span>
+                                                <span class="text-green-400 opacity-0 group-hover:opacity-100 ml-2 text-xs">🔍 Expand</span>
+                                            </div>
                                         </li>
                                         <li v-if="!filteredCoreKnowledge.length" class="text-gray-500 text-sm">
                                             [[ knowledgeSearch ? 'No matching core knowledge' : 'No core knowledge' ]]
                                         </li>
                                     </ul>
+                                    <div v-show="!expandedCategories.core_knowledge && filteredCoreKnowledge.length > 0" class="text-xs text-gray-500 mt-1">
+                                        Click to expand [[ filteredCoreKnowledge.length ]] items
+                                    </div>
                                 </div>
 
                                 <!-- Challenges -->
                                 <div v-show="knowledgeFilter === 'all' || knowledgeFilter === 'challenges'" class="bg-gray-800 rounded-xl p-4 col-span-2">
                                     <h4 class="text-md font-semibold mb-3 flex items-center">
-                                        <span class="text-red-400 mr-2">⚠️</span> Challenges
-                                        <span class="ml-auto text-xs text-gray-500">[[ filteredChallenges.length ]] / [[ actorDetails.challenges?.length || 0 ]]</span>
+                                        <span @click="openCategoryDetail('challenges')" class="flex items-center cursor-pointer hover:text-red-300 transition-colors flex-1">
+                                            <span class="text-red-400 mr-2">⚠️</span> Challenges
+                                            <span class="ml-2 text-xs text-purple-400 opacity-0 hover:opacity-100">📖 View All</span>
+                                        </span>
+                                        <span @click="toggleCategory('challenges')" class="text-xs text-gray-500 cursor-pointer hover:text-gray-300 transition-transform px-2" :class="{'rotate-180': !expandedCategories.challenges}">▼</span>
+                                        <span class="text-xs text-gray-500">[[ filteredChallenges.length ]] / [[ actorDetails.challenges?.length || 0 ]]</span>
                                     </h4>
-                                    <ul class="space-y-2 max-h-32 overflow-y-auto">
+                                    <ul v-show="expandedCategories.challenges" class="space-y-2 max-h-48 overflow-y-auto transition-all">
                                         <li v-for="(item, idx) in filteredChallenges" :key="idx" 
-                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2"
-                                            v-html="highlightSearch(item)">
+                                            @click="expandKnowledge('challenges', item, idx)"
+                                            class="text-sm text-gray-300 bg-gray-700 rounded px-3 py-2 cursor-pointer hover:bg-gray-600 hover:border-red-500 border border-transparent transition-all group">
+                                            <div class="flex items-start justify-between">
+                                                <span v-html="highlightSearch(item)" class="flex-1"></span>
+                                                <span class="text-red-400 opacity-0 group-hover:opacity-100 ml-2 text-xs">🔍 Expand</span>
+                                            </div>
                                         </li>
                                         <li v-if="!filteredChallenges.length" class="text-gray-500 text-sm">
                                             [[ knowledgeSearch ? 'No matching challenges' : 'No challenges recorded' ]]
                                         </li>
                                     </ul>
+                                    <div v-show="!expandedCategories.challenges && filteredChallenges.length > 0" class="text-xs text-gray-500 mt-1">
+                                        Click to expand [[ filteredChallenges.length ]] items
+                                    </div>
                                 </div>
                             </div>
 
@@ -1637,6 +1711,191 @@
                 </div>
             </div>
         </div>
+
+        <!-- Expand Knowledge Modal -->
+        <div v-if="showExpandKnowledge" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" @click.self="closeExpandKnowledge">
+            <div class="bg-gray-800 rounded-xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+                <div class="sticky top-0 bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between">
+                    <h3 class="text-lg font-semibold flex items-center">
+                        <span :class="expandKnowledgeIcon" class="mr-2">[[ expandKnowledgeTypeIcon ]]</span>
+                        Expand [[ expandKnowledgeTypeLabel ]]
+                    </h3>
+                    <button @click="closeExpandKnowledge" class="text-gray-400 hover:text-white">✕</button>
+                </div>
+                
+                <div class="p-6 overflow-y-auto flex-1 space-y-6">
+                    <!-- Original Content -->
+                    <div>
+                        <h4 class="text-sm font-semibold text-gray-400 mb-2">📄 Original Content</h4>
+                        <div class="bg-gray-900 rounded-lg p-4 text-sm text-gray-300">
+                            [[ expandKnowledgeItem ]]
+                        </div>
+                    </div>
+                    
+                    <!-- AI Expansion -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-sm font-semibold text-purple-400">✨ AI Expansion</h4>
+                            <button 
+                                @click="generateKnowledgeExpansion"
+                                :disabled="expandKnowledgeLoading"
+                                class="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg transition-colors flex items-center space-x-1"
+                            >
+                                <span v-if="expandKnowledgeLoading" class="animate-spin">⏳</span>
+                                <span v-else>🔄</span>
+                                <span>[[ expandKnowledgeLoading ? 'Generating...' : 'Generate Expansion' ]]</span>
+                            </button>
+                        </div>
+                        <div class="bg-gray-900 rounded-lg p-4 min-h-[100px]">
+                            <div v-if="!expandKnowledgeExpansion && !expandKnowledgeLoading" class="text-gray-500 text-sm">
+                                Click "Generate Expansion" to get AI-generated details about this knowledge item.
+                            </div>
+                            <div v-else-if="expandKnowledgeLoading" class="text-gray-400 text-sm animate-pulse">
+                                Generating expansion...
+                            </div>
+                            <div v-else class="text-sm text-gray-300 markdown-content" v-html="renderMarkdown(expandKnowledgeExpansion)"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- User Notes -->
+                    <div>
+                        <h4 class="text-sm font-semibold text-blue-400 mb-2">📝 Your Notes</h4>
+                        <textarea 
+                            v-model="expandKnowledgeNotes"
+                            rows="4"
+                            placeholder="Add your own notes, insights, or elaborations about this knowledge item..."
+                            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-purple-500 resize-none"
+                        ></textarea>
+                    </div>
+                    
+                    <!-- Related Knowledge -->
+                    <div v-if="expandKnowledgeRelated.length > 0">
+                        <h4 class="text-sm font-semibold text-green-400 mb-2">🔗 Related Knowledge</h4>
+                        <div class="space-y-2">
+                            <div v-for="(related, idx) in expandKnowledgeRelated" :key="idx" 
+                                 class="bg-gray-700 rounded-lg p-3 text-sm text-gray-300 hover:bg-gray-600 transition-colors cursor-pointer"
+                                 @click="expandKnowledge(related.type, related.content, related.index)">
+                                <span class="text-xs text-gray-500 mr-2">[[ related.type ]]:</span>
+                                [[ related.content.substring(0, 100) ]][[ related.content.length > 100 ? '...' : '' ]]
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Footer Actions -->
+                <div class="border-t border-gray-700 p-4 flex justify-between items-center bg-gray-800">
+                    <div class="flex items-center space-x-2 text-xs text-gray-500">
+                        <span>Type: [[ expandKnowledgeType ]]</span>
+                        <span>•</span>
+                        <span>Index: [[ expandKnowledgeIndex ]]</span>
+                    </div>
+                    <div class="flex space-x-3">
+                        <button 
+                            @click="deleteKnowledgeItem"
+                            class="px-4 py-2 text-red-400 hover:text-red-300 hover:bg-red-600/10 rounded-lg transition-colors text-sm"
+                        >
+                            🗑️ Delete
+                        </button>
+                        <button 
+                            @click="saveKnowledgeExpansion"
+                            :disabled="expandKnowledgeSaving"
+                            class="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg transition-colors text-sm flex items-center space-x-1"
+                        >
+                            <span v-if="expandKnowledgeSaving" class="animate-spin">⏳</span>
+                            <span>💾 Save Changes</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category Detail Modal -->
+        <div v-if="showCategoryDetail" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" @click.self="closeCategoryDetail">
+            <div class="bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <!-- Header -->
+                <div class="sticky top-0 bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between">
+                    <h3 class="text-xl font-semibold flex items-center">
+                        <span class="mr-2">[[ categoryDetailIcon ]]</span>
+                        [[ categoryDetailLabel ]]
+                        <span class="ml-3 text-sm font-normal text-gray-400">([[ categoryDetailItems.length ]] items)</span>
+                    </h3>
+                    <div class="flex items-center space-x-3">
+                        <input 
+                            v-model="categoryDetailSearch"
+                            type="text"
+                            placeholder="Search in category..."
+                            class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 w-48"
+                        >
+                        <button @click="closeCategoryDetail" class="text-gray-400 hover:text-white text-xl">✕</button>
+                    </div>
+                </div>
+                
+                <!-- Category Description -->
+                <div class="px-6 py-4 bg-gray-900/50 border-b border-gray-700">
+                    <p class="text-sm text-gray-400">[[ categoryDetailDescription ]]</p>
+                </div>
+                
+                <!-- Items List -->
+                <div class="p-6 overflow-y-auto flex-1">
+                    <div class="space-y-3">
+                        <div v-for="(item, idx) in filteredCategoryDetailItems" :key="idx" 
+                             class="bg-gray-700 rounded-lg p-4 hover:bg-gray-600 transition-colors cursor-pointer border border-transparent hover:border-gray-500 group"
+                             @click="expandKnowledgeFromCategory(item, idx)">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1">
+                                    <div class="flex items-start">
+                                        <span class="text-gray-500 text-xs mr-3 mt-1">#[[ idx + 1 ]]</span>
+                                        <p class="text-sm text-gray-200" v-html="highlightCategorySearch(item)"></p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-2 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                        @click.stop="expandKnowledgeFromCategory(item, idx)"
+                                        class="px-2 py-1 text-xs bg-purple-600 hover:bg-purple-700 rounded transition-colors"
+                                        title="Expand with AI"
+                                    >
+                                        🔍 Expand
+                                    </button>
+                                    <button 
+                                        @click.stop="deleteKnowledgeFromCategory(idx)"
+                                        class="px-2 py-1 text-xs text-red-400 hover:bg-red-600/20 rounded transition-colors"
+                                        title="Delete item"
+                                    >
+                                        🗑️
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div v-if="filteredCategoryDetailItems.length === 0" class="text-center py-8 text-gray-500">
+                            <span v-if="categoryDetailSearch">No items match your search</span>
+                            <span v-else>No items in this category</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Footer with Add New -->
+                <div class="border-t border-gray-700 p-4 bg-gray-800">
+                    <div class="flex space-x-3">
+                        <input 
+                            v-model="categoryDetailNewItem"
+                            type="text"
+                            :placeholder="'Add new ' + categoryDetailLabel.toLowerCase() + '...'"
+                            class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-purple-500"
+                            @keyup.enter="addItemToCategory"
+                        >
+                        <button 
+                            @click="addItemToCategory"
+                            :disabled="!categoryDetailNewItem.trim()"
+                            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg transition-colors text-sm flex items-center space-x-1"
+                        >
+                            <span>➕</span>
+                            <span>Add</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -1709,6 +1968,15 @@
                     knowledgeFilter: 'all',
                     knowledgeRefreshing: false,
                     
+                    // Knowledge Category Expansion
+                    expandedCategories: {
+                        values: true,
+                        principles: true,
+                        experiences: true,
+                        core_knowledge: true,
+                        challenges: true
+                    },
+                    
                     // Create Actor
                     showCreateActor: false,
                     createActorMode: 'ai',
@@ -1756,7 +2024,24 @@
                     // Message Details Modal
                     showMessageDetailsModal: false,
                     selectedMessage: null,
-                    selectedMessageIndex: null
+                    selectedMessageIndex: null,
+                    
+                    // Expand Knowledge Modal
+                    showExpandKnowledge: false,
+                    expandKnowledgeType: '',
+                    expandKnowledgeItem: '',
+                    expandKnowledgeIndex: null,
+                    expandKnowledgeExpansion: '',
+                    expandKnowledgeNotes: '',
+                    expandKnowledgeRelated: [],
+                    expandKnowledgeLoading: false,
+                    expandKnowledgeSaving: false,
+                    
+                    // Category Detail Modal
+                    showCategoryDetail: false,
+                    categoryDetailType: '',
+                    categoryDetailSearch: '',
+                    categoryDetailNewItem: ''
                 };
             },
             computed: {
@@ -1781,6 +2066,70 @@
                            this.filteredExperiences.length + 
                            this.filteredCoreKnowledge.length + 
                            this.filteredChallenges.length;
+                },
+                expandKnowledgeTypeLabel() {
+                    const labels = {
+                        'values': 'Value',
+                        'principles': 'Principle',
+                        'experiences': 'Experience',
+                        'core_knowledge': 'Core Knowledge',
+                        'challenges': 'Challenge'
+                    };
+                    return labels[this.expandKnowledgeType] || 'Knowledge';
+                },
+                expandKnowledgeTypeIcon() {
+                    const icons = {
+                        'values': '⭐',
+                        'principles': '📜',
+                        'experiences': '💡',
+                        'core_knowledge': '📚',
+                        'challenges': '⚠️'
+                    };
+                    return icons[this.expandKnowledgeType] || '📄';
+                },
+                // Category Detail Modal computed properties
+                categoryDetailLabel() {
+                    const labels = {
+                        'values': 'Values',
+                        'principles': 'Principles',
+                        'experiences': 'Experiences',
+                        'core_knowledge': 'Core Knowledge',
+                        'challenges': 'Challenges'
+                    };
+                    return labels[this.categoryDetailType] || 'Knowledge';
+                },
+                categoryDetailIcon() {
+                    const icons = {
+                        'values': '⭐',
+                        'principles': '📜',
+                        'experiences': '💡',
+                        'core_knowledge': '📚',
+                        'challenges': '⚠️'
+                    };
+                    return icons[this.categoryDetailType] || '📄';
+                },
+                categoryDetailDescription() {
+                    const descriptions = {
+                        'values': 'Core values that guide decision-making and behavior. These represent fundamental beliefs and priorities.',
+                        'principles': 'Guiding principles and rules derived from experience and knowledge. These help maintain consistency in actions.',
+                        'experiences': 'Learned experiences and observations. These capture lessons from interactions and research.',
+                        'core_knowledge': 'Essential domain knowledge and facts. This forms the foundational understanding of relevant topics.',
+                        'challenges': 'Current challenges and areas for improvement. These represent growth opportunities and unsolved problems.'
+                    };
+                    return descriptions[this.categoryDetailType] || 'Knowledge items in this category.';
+                },
+                categoryDetailItems() {
+                    if (!this.actorDetails || !this.categoryDetailType) return [];
+                    return this.actorDetails[this.categoryDetailType] || [];
+                },
+                filteredCategoryDetailItems() {
+                    if (!this.categoryDetailSearch.trim()) {
+                        return this.categoryDetailItems;
+                    }
+                    const search = this.categoryDetailSearch.toLowerCase();
+                    return this.categoryDetailItems.filter(item => 
+                        item.toLowerCase().includes(search)
+                    );
                 }
             },
             methods: {
@@ -1816,6 +2165,93 @@
                     const regex = new RegExp(`(${search})`, 'gi');
                     return text.replace(regex, '<mark class="bg-yellow-500/40 text-white rounded px-0.5">$1</mark>');
                 },
+                
+                toggleCategory(category) {
+                    this.expandedCategories[category] = !this.expandedCategories[category];
+                },
+                
+                expandAllCategories() {
+                    Object.keys(this.expandedCategories).forEach(key => {
+                        this.expandedCategories[key] = true;
+                    });
+                },
+                
+                collapseAllCategories() {
+                    Object.keys(this.expandedCategories).forEach(key => {
+                        this.expandedCategories[key] = false;
+                    });
+                },
+                
+                // Category Detail Modal Methods
+                openCategoryDetail(categoryType) {
+                    this.categoryDetailType = categoryType;
+                    this.categoryDetailSearch = '';
+                    this.categoryDetailNewItem = '';
+                    this.showCategoryDetail = true;
+                },
+                
+                closeCategoryDetail() {
+                    this.showCategoryDetail = false;
+                    this.categoryDetailType = '';
+                    this.categoryDetailSearch = '';
+                    this.categoryDetailNewItem = '';
+                },
+                
+                highlightCategorySearch(text) {
+                    if (!this.categoryDetailSearch.trim()) return text;
+                    const search = this.categoryDetailSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`(${search})`, 'gi');
+                    return text.replace(regex, '<span class="bg-yellow-500/30 text-yellow-200 px-0.5 rounded">$1</span>');
+                },
+                
+                expandKnowledgeFromCategory(item, idx) {
+                    // Close category detail and open expand modal
+                    this.closeCategoryDetail();
+                    this.expandKnowledge(this.categoryDetailType, item, idx);
+                },
+                
+                async deleteKnowledgeFromCategory(idx) {
+                    if (!confirm('Delete this item?')) return;
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/knowledge/${this.categoryDetailType}/${idx}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        const data = await res.json();
+                        if (data.success) {
+                            // Reload actor details
+                            await this.loadActorDetails();
+                        } else {
+                            alert('Failed to delete: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        alert('Failed to delete: ' + e.message);
+                    }
+                },
+                
+                async addItemToCategory() {
+                    if (!this.categoryDetailNewItem.trim()) return;
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/knowledge/${this.categoryDetailType}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ content: this.categoryDetailNewItem.trim() })
+                        });
+                        
+                        const data = await res.json();
+                        if (data.success) {
+                            this.categoryDetailNewItem = '';
+                            await this.loadActorDetails();
+                        } else {
+                            alert('Failed to add: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        alert('Failed to add: ' + e.message);
+                    }
+                },
+                
                 async selectActor(actor) {
                     this.selectedActor = actor;
                     this.chatHistory = [];
@@ -2581,6 +3017,150 @@
                         }
                     } catch (e) {
                         alert('Failed to load chat history: ' + e.message);
+                    }
+                },
+                
+                // Expand Knowledge Methods
+                expandKnowledge(type, item, index) {
+                    this.expandKnowledgeType = type;
+                    this.expandKnowledgeItem = item;
+                    this.expandKnowledgeIndex = index;
+                    this.expandKnowledgeExpansion = '';
+                    this.expandKnowledgeNotes = '';
+                    this.expandKnowledgeRelated = [];
+                    this.showExpandKnowledge = true;
+                    
+                    // Find related knowledge items
+                    this.findRelatedKnowledge(item);
+                },
+                
+                closeExpandKnowledge() {
+                    this.showExpandKnowledge = false;
+                    this.expandKnowledgeType = '';
+                    this.expandKnowledgeItem = '';
+                    this.expandKnowledgeIndex = null;
+                    this.expandKnowledgeExpansion = '';
+                    this.expandKnowledgeNotes = '';
+                    this.expandKnowledgeRelated = [];
+                },
+                
+                findRelatedKnowledge(item) {
+                    // Simple keyword-based matching to find related items
+                    const keywords = item.toLowerCase().split(/\s+/).filter(w => w.length > 4);
+                    const related = [];
+                    
+                    const searchIn = (items, type) => {
+                        if (!items) return;
+                        items.forEach((content, idx) => {
+                            if (content === item) return; // Skip self
+                            const contentLower = content.toLowerCase();
+                            const matches = keywords.filter(kw => contentLower.includes(kw));
+                            if (matches.length >= 2) {
+                                related.push({ type, content, index: idx, score: matches.length });
+                            }
+                        });
+                    };
+                    
+                    searchIn(this.actorDetails.values, 'values');
+                    searchIn(this.actorDetails.principles, 'principles');
+                    searchIn(this.actorDetails.experiences, 'experiences');
+                    searchIn(this.actorDetails.core_knowledge, 'core_knowledge');
+                    searchIn(this.actorDetails.challenges, 'challenges');
+                    
+                    // Sort by score and take top 5
+                    related.sort((a, b) => b.score - a.score);
+                    this.expandKnowledgeRelated = related.slice(0, 5);
+                },
+                
+                async generateKnowledgeExpansion() {
+                    if (!this.selectedActor || !this.expandKnowledgeItem) return;
+                    
+                    this.expandKnowledgeLoading = true;
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/knowledge/expand`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                type: this.expandKnowledgeType,
+                                content: this.expandKnowledgeItem,
+                                index: this.expandKnowledgeIndex
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        
+                        if (data.error) {
+                            alert('Failed to generate expansion: ' + data.error);
+                        } else {
+                            this.expandKnowledgeExpansion = data.expansion || 'No expansion generated.';
+                        }
+                    } catch (e) {
+                        alert('Failed to generate expansion: ' + e.message);
+                    }
+                    
+                    this.expandKnowledgeLoading = false;
+                },
+                
+                async saveKnowledgeExpansion() {
+                    if (!this.selectedActor) return;
+                    
+                    this.expandKnowledgeSaving = true;
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/knowledge/save-expansion`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                type: this.expandKnowledgeType,
+                                index: this.expandKnowledgeIndex,
+                                original: this.expandKnowledgeItem,
+                                expansion: this.expandKnowledgeExpansion,
+                                notes: this.expandKnowledgeNotes
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        
+                        if (data.error) {
+                            alert('Failed to save: ' + data.error);
+                        } else {
+                            alert('Expansion saved successfully!');
+                            this.closeExpandKnowledge();
+                            // Refresh actor details
+                            this.selectActor(this.selectedActor);
+                        }
+                    } catch (e) {
+                        alert('Failed to save: ' + e.message);
+                    }
+                    
+                    this.expandKnowledgeSaving = false;
+                },
+                
+                async deleteKnowledgeItem() {
+                    if (!this.selectedActor) return;
+                    
+                    if (!confirm(`Are you sure you want to delete this ${this.expandKnowledgeTypeLabel}? This cannot be undone.`)) {
+                        return;
+                    }
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/knowledge/${this.expandKnowledgeType}/${this.expandKnowledgeIndex}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        const data = await res.json();
+                        
+                        if (data.error) {
+                            alert('Failed to delete: ' + data.error);
+                        } else {
+                            alert('Item deleted successfully!');
+                            this.closeExpandKnowledge();
+                            // Refresh actor details
+                            this.selectActor(this.selectedActor);
+                        }
+                    } catch (e) {
+                        alert('Failed to delete: ' + e.message);
                     }
                 },
                 
