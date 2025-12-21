@@ -68,6 +68,7 @@ class SilvertongueSubconscious:
     def analyze_request(self, user_input):
         """
         Uses the subconscious prompt to classify and point to relevant experience and knowledge.
+        Returns enriched analysis with domain, intent, complexity, and relevant context.
         """
         subconscious_prompt = self.generate_subconscious_prompt()
         
@@ -76,15 +77,30 @@ class SilvertongueSubconscious:
         
         supporting_kb = self.kb.get_supporting_knowledge()
         supporting_kb_str = "\n".join(f"{i}. {k}" for i, k in enumerate(supporting_kb))
+        
+        principles = self.kb.get_principles()
+        principles_str = "\n".join(f"{i}. {p}" for i, p in enumerate(principles))
 
         task_prompt = (
-            "Analyze the following user request.\n"
-            "1. Classify the domain.\n"
-            "2. Identify relevant experiences from the list below (return the text).\n"
-            "3. Identify relevant supporting knowledge from the list below (return the text).\n\n"
+            "Analyze the following user request thoroughly.\n"
+            "1. Classify the domain (e.g., Chemistry, Technology, General, etc.).\n"
+            "2. Identify the intent (e.g., question, request, analysis, discussion, etc.).\n"
+            "3. Assess complexity (low, medium, or high).\n"
+            "4. Identify relevant experiences by their INDEX NUMBERS from the list below.\n"
+            "5. Identify relevant supporting knowledge by their INDEX NUMBERS from the list below.\n"
+            "6. Identify applicable principles by their INDEX NUMBERS from the list below.\n\n"
             f"Available Experiences:\n{experiences_str}\n\n"
             f"Available Supporting Knowledge:\n{supporting_kb_str}\n\n"
-            "Return ONLY valid JSON format: {\"domain\": \"...\", \"relevant_experiences\": [\"...\"], \"relevant_knowledge\": [\"...\"]}"
+            f"Available Principles:\n{principles_str}\n\n"
+            "Return ONLY valid JSON format with INDEX NUMBERS (integers):\n"
+            "{\n"
+            '  "domain": "...",\n'
+            '  "intent": "...",\n'
+            '  "complexity": "low|medium|high",\n'
+            '  "relevant_experience_indices": [0, 2, 5],\n'
+            '  "relevant_knowledge_indices": [1, 3],\n'
+            '  "applicable_principle_indices": [0, 4]\n'
+            "}"
         )
 
         messages = [
@@ -98,13 +114,47 @@ class SilvertongueSubconscious:
         clean_response = response_text.replace("```json", "").replace("```", "").strip()
         
         try:
-            return json.loads(clean_response)
+            result = json.loads(clean_response)
+            
+            # Convert indices to full text (no truncation!)
+            exp_indices = result.get("relevant_experience_indices", [])
+            know_indices = result.get("relevant_knowledge_indices", [])
+            prin_indices = result.get("applicable_principle_indices", [])
+            
+            # Look up full text by index
+            relevant_experiences = []
+            for idx in exp_indices:
+                if isinstance(idx, int) and 0 <= idx < len(experiences):
+                    relevant_experiences.append(experiences[idx])
+            
+            relevant_knowledge = []
+            for idx in know_indices:
+                if isinstance(idx, int) and 0 <= idx < len(supporting_kb):
+                    relevant_knowledge.append(supporting_kb[idx])
+            
+            applicable_principles = []
+            for idx in prin_indices:
+                if isinstance(idx, int) and 0 <= idx < len(principles):
+                    applicable_principles.append(principles[idx])
+            
+            # Build final result with full text
+            return {
+                "domain": result.get("domain", "General"),
+                "intent": result.get("intent", "Unknown"),
+                "complexity": result.get("complexity", "medium"),
+                "relevant_experiences": relevant_experiences,
+                "relevant_knowledge": relevant_knowledge,
+                "applicable_principles": applicable_principles,
+            }
         except json.JSONDecodeError:
             # Fallback or error handling
             return {
                 "domain": "Unknown",
+                "intent": "Unknown",
+                "complexity": "medium",
                 "relevant_experiences": [],
                 "relevant_knowledge": [],
+                "applicable_principles": [],
                 "raw_response": response_text
             }
 

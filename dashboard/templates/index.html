@@ -487,34 +487,112 @@
                                 </div>
                                 
                                 <!-- Thought Process Panel (when cognitive mode is on) -->
-                                <div v-if="useCognitive && (thoughtProcess || chatLoading)" class="w-80 bg-gray-900 rounded-lg p-4 h-[460px] overflow-y-auto">
-                                    <h4 class="text-sm font-semibold mb-3 text-purple-400">🧠 Thought Process</h4>
+                                <div v-if="useCognitive && (thoughtProcess || chatLoading)" class="w-96 bg-gray-900 rounded-lg p-4 h-[460px] overflow-y-auto">
+                                    <h4 class="text-sm font-semibold mb-3 text-purple-400">🧠 Cognitive Processing</h4>
                                     
                                     <div v-if="chatLoading && !thoughtProcess" class="text-gray-500 text-sm">
                                         <div class="animate-pulse">Analyzing request...</div>
                                     </div>
                                     
                                     <div v-if="thoughtProcess" class="space-y-3 text-xs">
-                                        <!-- Analysis -->
-                                        <div v-if="thoughtProcess.analysis" class="bg-gray-800 rounded p-2">
-                                            <div class="text-purple-300 font-medium mb-1">📊 Analysis</div>
-                                            <div class="text-gray-400">
-                                                <div v-if="thoughtProcess.analysis.domain">Domain: <span class="text-white">[[ thoughtProcess.analysis.domain ]]</span></div>
-                                                <div v-if="thoughtProcess.analysis.intent">Intent: <span class="text-white">[[ thoughtProcess.analysis.intent ]]</span></div>
-                                                <div v-if="thoughtProcess.analysis.complexity">Complexity: <span class="text-white">[[ thoughtProcess.analysis.complexity ]]</span></div>
+                                        <!-- Subconscious Analysis -->
+                                        <div v-if="thoughtProcess.analysis" class="bg-purple-900/30 border border-purple-600/30 rounded p-3">
+                                            <div class="text-purple-300 font-semibold mb-2 flex items-center">
+                                                <span class="mr-2">🔮</span> Subconscious Analysis
+                                            </div>
+                                            <div class="space-y-2 text-gray-300">
+                                                <div v-if="thoughtProcess.analysis.domain" class="flex">
+                                                    <span class="text-gray-500 w-20">Domain:</span>
+                                                    <span class="text-cyan-400">[[ thoughtProcess.analysis.domain ]]</span>
+                                                </div>
+                                                <div v-if="thoughtProcess.analysis.intent" class="flex">
+                                                    <span class="text-gray-500 w-20">Intent:</span>
+                                                    <span class="text-yellow-400">[[ thoughtProcess.analysis.intent ]]</span>
+                                                </div>
+                                                <div v-if="thoughtProcess.analysis.complexity" class="flex">
+                                                    <span class="text-gray-500 w-20">Complexity:</span>
+                                                    <span :class="thoughtProcess.analysis.complexity === 'high' ? 'text-red-400' : thoughtProcess.analysis.complexity === 'medium' ? 'text-yellow-400' : 'text-green-400'">
+                                                        [[ thoughtProcess.analysis.complexity ]]
+                                                    </span>
+                                                </div>
+                                                
+                                                <!-- Relevant Knowledge -->
+                                                <div v-if="thoughtProcess.analysis.relevant_knowledge?.length" class="mt-2">
+                                                    <div class="text-gray-500 mb-1">📚 Retrieved Knowledge:</div>
+                                                    <ul class="ml-3 space-y-1">
+                                                        <li v-for="(item, i) in thoughtProcess.analysis.relevant_knowledge.slice(0, 5)" :key="i" 
+                                                            class="text-gray-400 text-xs leading-relaxed cursor-help hover:text-gray-300" :title="item">
+                                                            • [[ truncate(item, 120) ]]
+                                                        </li>
+                                                        <li v-if="thoughtProcess.analysis.relevant_knowledge.length > 5" class="text-gray-500 italic">
+                                                            ... and [[ thoughtProcess.analysis.relevant_knowledge.length - 5 ]] more
+                                                        </li>
+                                                    </ul>
+                                                </div>
+                                                
+                                                <!-- Relevant Experiences -->
+                                                <div v-if="thoughtProcess.analysis.relevant_experiences?.length" class="mt-2">
+                                                    <div class="text-gray-500 mb-1">💡 Relevant Experiences:</div>
+                                                    <ul class="ml-3 space-y-1">
+                                                        <li v-for="(item, i) in thoughtProcess.analysis.relevant_experiences.slice(0, 5)" :key="i" 
+                                                            class="text-blue-400 text-xs leading-relaxed cursor-help hover:text-blue-300" :title="item">
+                                                            • [[ truncate(item, 120) ]]
+                                                        </li>
+                                                        <li v-if="thoughtProcess.analysis.relevant_experiences.length > 5" class="text-gray-500 italic">
+                                                            ... and [[ thoughtProcess.analysis.relevant_experiences.length - 5 ]] more
+                                                        </li>
+                                                    </ul>
+                                                </div>
+                                                
+                                                <!-- Applicable Principles -->
+                                                <div v-if="thoughtProcess.analysis.applicable_principles?.length" class="mt-2">
+                                                    <div class="text-gray-500 mb-1">📜 Applied Principles:</div>
+                                                    <ul class="ml-3 space-y-1">
+                                                        <li v-for="(item, i) in thoughtProcess.analysis.applicable_principles.slice(0, 5)" :key="i" 
+                                                            class="text-purple-400 text-xs leading-relaxed cursor-help hover:text-purple-300" :title="item">
+                                                            • [[ truncate(item, 120) ]]
+                                                        </li>
+                                                        <li v-if="thoughtProcess.analysis.applicable_principles.length > 5" class="text-gray-500 italic">
+                                                            ... and [[ thoughtProcess.analysis.applicable_principles.length - 5 ]] more
+                                                        </li>
+                                                    </ul>
+                                                </div>
                                             </div>
                                         </div>
                                         
-                                        <!-- Thought History -->
+                                        <!-- Conscious Processing -->
+                                        <div class="bg-blue-900/30 border border-blue-600/30 rounded p-3">
+                                            <div class="text-blue-300 font-semibold mb-2 flex items-center">
+                                                <span class="mr-2">💭</span> Conscious Processing
+                                            </div>
+                                            <div class="text-gray-400 text-xs">
+                                                Synthesizing response using retrieved context, applying reasoning and character traits...
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Thought History (detailed steps) -->
                                         <div v-if="thoughtProcess.thought_history?.length" class="space-y-2">
-                                            <div class="text-blue-300 font-medium">💭 Thought Steps</div>
+                                            <div class="text-green-300 font-semibold flex items-center">
+                                                <span class="mr-2">📋</span> Processing Steps
+                                            </div>
                                             <div v-for="(step, idx) in thoughtProcess.thought_history" :key="idx" 
-                                                 class="bg-gray-800 rounded p-2">
-                                                <div class="text-yellow-400">[[ step.step ]]</div>
-                                                <div class="text-gray-400 mt-1 truncate-3" :title="step.content">
-                                                    [[ truncate(step.content, 150) ]]
+                                                 class="bg-gray-800 rounded p-2 border-l-2 border-green-600">
+                                                <div class="text-green-400 text-xs font-medium">[[ step.step ]]</div>
+                                                <div class="text-gray-400 mt-1" :title="step.content">
+                                                    [[ truncate(step.content, 100) ]]
                                                 </div>
                                             </div>
+                                        </div>
+                                        
+                                        <!-- View Full Details Button -->
+                                        <div class="mt-3 pt-3 border-t border-gray-700">
+                                            <button 
+                                                @click="showLastMessageDetails()"
+                                                class="w-full text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 py-2 px-3 rounded transition-colors flex items-center justify-center space-x-2"
+                                            >
+                                                <span>📄</span>
+                                                <span>View Full Prompts & Analysis</span>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -812,6 +890,15 @@
                                             <span>Collapse All</span>
                                         </button>
                                     </div>
+                                    <!-- Archive Viewer Button -->
+                                    <button 
+                                        @click="showArchiveViewer = true; loadArchive()"
+                                        class="px-3 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-600 text-sm flex items-center space-x-1"
+                                        title="View archived knowledge and condensation history"
+                                    >
+                                        <span>📦</span>
+                                        <span>Archive</span>
+                                    </button>
                                     <span v-if="knowledgeSearch" class="text-sm text-gray-400">
                                         [[ filteredKnowledgeCount ]] results
                                     </span>
@@ -836,6 +923,24 @@
                                     <div class="text-3xl font-bold text-yellow-400">[[ actorDetails.challenges?.length || 0 ]]</div>
                                     <div class="text-sm text-gray-400">Challenges</div>
                                 </div>
+                            </div>
+                            
+                            <!-- Archive Status Banner -->
+                            <div v-if="actorDetails.archive_history?.length > 0" 
+                                 class="bg-amber-900/30 border border-amber-700 rounded-xl p-3 flex items-center justify-between">
+                                <div class="flex items-center space-x-3">
+                                    <span class="text-amber-400 text-xl">📦</span>
+                                    <div>
+                                        <span class="text-amber-300 font-medium">[[ actorDetails.archive_history.length ]] archives available</span>
+                                        <span class="text-amber-400/60 text-sm ml-2">
+                                            (from [[ [...new Set(actorDetails.archive_history.map(a => a.key))].length ]] categories)
+                                        </span>
+                                    </div>
+                                </div>
+                                <button @click="showArchiveViewer = true; loadArchive()" 
+                                        class="px-3 py-1 bg-amber-700 text-white rounded hover:bg-amber-600 text-sm">
+                                    View Archive History →
+                                </button>
                             </div>
 
                             <!-- Knowledge Sections -->
@@ -1122,7 +1227,7 @@
                                 </div>
 
                                 <!-- Sleep Options -->
-                                <div class="grid grid-cols-2 gap-4 mt-4">
+                                <div class="grid grid-cols-3 gap-4 mt-4">
                                     <div class="bg-gray-700 rounded-lg p-4">
                                         <label class="flex items-center space-x-2 cursor-pointer">
                                             <input type="checkbox" v-model="sleepOptions.includeDreams" 
@@ -1139,6 +1244,17 @@
                                             <option value="sharegpt">ShareGPT (conversations)</option>
                                             <option value="full">Full (with metadata)</option>
                                         </select>
+                                    </div>
+                                    <div class="bg-gray-700 rounded-lg p-4">
+                                        <label class="text-sm text-gray-300 block mb-2">🎯 LoRA Adapter</label>
+                                        <select v-model="sleepOptions.adapter" 
+                                                class="w-full bg-gray-600 border-gray-500 rounded-lg px-3 py-2 text-sm">
+                                            <option value="">Base Model (no adapter)</option>
+                                            <option v-for="adapter in availableAdapters" :key="adapter.fullPath" :value="adapter.fullPath">
+                                                [[ adapter.displayName ]]
+                                            </option>
+                                        </select>
+                                        <p class="text-xs text-gray-400 mt-1">Model for consolidation LLM calls</p>
                                     </div>
                                 </div>
 
@@ -1344,13 +1460,66 @@
                                 <div v-if="trainerStatus.connected && sleepStatus.has_data" class="space-y-4">
                                     <h4 class="text-sm font-semibold text-gray-300">Training Configuration</h4>
                                     
-                                    <!-- Server Base Model Info -->
-                                    <div class="mb-4 p-3 bg-gray-700/50 rounded-lg">
-                                        <label class="block text-xs text-gray-400 mb-1">Base Model (Server Config)</label>
-                                        <div class="text-sm text-cyan-400 font-mono">[[ trainerStatus.base_model || 'Loading...' ]]</div>
-                                        <p class="text-xs text-gray-500 mt-1">Model configured on the trainer server</p>
+                                    <!-- Base Model Selection -->
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs text-gray-400 mb-1">🎯 Base Model</label>
+                                            <select v-model="trainingConfig.base_model" 
+                                                    class="w-full bg-gray-700 border-gray-600 rounded-lg px-3 py-2 text-sm">
+                                                <option value="">Server Default ([[ trainerStatus.base_model || 'auto' ]])</option>
+                                                <option v-for="model in trainerStatus.available_models" :key="model" :value="model">
+                                                    [[ model ]]
+                                                </option>
+                                            </select>
+                                            <p class="text-xs text-gray-500 mt-1">Model to fine-tune with LoRA</p>
+                                        </div>
+                                        
+                                        <div>
+                                            <label class="block text-xs text-gray-400 mb-1">📊 Training Dataset</label>
+                                            <select v-model="trainingConfig.dataset" 
+                                                    class="w-full bg-gray-700 border-gray-600 rounded-lg px-3 py-2 text-sm">
+                                                <option value="">Latest Dataset</option>
+                                                <option v-for="dataset in sleepStatus.datasets" :key="dataset.filename" :value="dataset.filename">
+                                                    [[ dataset.filename ]] ([[ dataset.examples ]] examples)
+                                                </option>
+                                            </select>
+                                            <p class="text-xs text-gray-500 mt-1">Dataset generated from Sleep tab</p>
+                                        </div>
                                     </div>
                                     
+                                    <!-- Dataset Info -->
+                                    <div v-if="selectedTrainingDataset" class="p-3 bg-gray-700/50 rounded-lg">
+                                        <div class="flex items-center justify-between text-sm">
+                                            <span class="text-gray-400">Selected Dataset:</span>
+                                            <span class="text-green-400 font-mono">[[ selectedTrainingDataset.filename ]]</span>
+                                        </div>
+                                        <div class="flex items-center justify-between text-xs text-gray-500 mt-1">
+                                            <span>Examples: [[ selectedTrainingDataset.examples ]]</span>
+                                            <span>Generated: [[ formatDate(selectedTrainingDataset.generated_at) ]]</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- LoRA-on-LoRA: Base Adapter Selection -->
+                                    <div class="p-3 bg-purple-900/20 border border-purple-600/30 rounded-lg">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <label class="text-xs text-purple-300 font-medium">🔗 LoRA-on-LoRA (Optional)</label>
+                                            <span class="text-xs text-gray-500">Build on existing adapter</span>
+                                        </div>
+                                        <select v-model="trainingConfig.base_adapter" 
+                                                class="w-full bg-gray-700 border-purple-600/50 rounded-lg px-3 py-2 text-sm">
+                                            <option value="">None (Train from scratch)</option>
+                                            <optgroup v-for="model in trainedModels" :key="model.name" :label="model.nickname || model.name">
+                                                <option v-for="ver in model.versions" :key="ver.path" :value="ver.path">
+                                                    [[ ver.nickname || ver.version ]] - [[ ver.examples || '?' ]] examples
+                                                </option>
+                                            </optgroup>
+                                        </select>
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            Select an existing adapter to merge and train on top of (stacked LoRA)
+                                        </p>
+                                    </div>
+                                    
+                                    <!-- LoRA Hyperparameters -->
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
                                             <label class="block text-xs text-gray-400 mb-1">Epochs</label>
@@ -1657,25 +1826,44 @@
                     
                     <!-- Subconscious Analysis -->
                     <div v-if="selectedMessage.subconscious_analysis">
-                        <h4 class="text-sm font-semibold text-blue-400 mb-2">🔍 Subconscious Analysis</h4>
+                        <h4 class="text-sm font-semibold text-blue-400 mb-2">🔮 Subconscious Analysis</h4>
                         <div class="bg-gray-900 rounded-lg p-4">
                             <div class="space-y-3 text-sm">
-                                <div v-if="selectedMessage.subconscious_analysis.domain">
-                                    <span class="text-gray-400">Domain:</span>
-                                    <span class="text-white ml-2">[[ selectedMessage.subconscious_analysis.domain ]]</span>
+                                <div class="grid grid-cols-3 gap-4">
+                                    <div v-if="selectedMessage.subconscious_analysis.domain">
+                                        <span class="text-gray-500 text-xs">Domain</span>
+                                        <div class="text-cyan-400 font-medium">[[ selectedMessage.subconscious_analysis.domain ]]</div>
+                                    </div>
+                                    <div v-if="selectedMessage.subconscious_analysis.intent">
+                                        <span class="text-gray-500 text-xs">Intent</span>
+                                        <div class="text-yellow-400 font-medium">[[ selectedMessage.subconscious_analysis.intent ]]</div>
+                                    </div>
+                                    <div v-if="selectedMessage.subconscious_analysis.complexity">
+                                        <span class="text-gray-500 text-xs">Complexity</span>
+                                        <div :class="selectedMessage.subconscious_analysis.complexity === 'high' ? 'text-red-400' : selectedMessage.subconscious_analysis.complexity === 'medium' ? 'text-yellow-400' : 'text-green-400'" class="font-medium">
+                                            [[ selectedMessage.subconscious_analysis.complexity ]]
+                                        </div>
+                                    </div>
                                 </div>
                                 
                                 <div v-if="selectedMessage.subconscious_analysis.relevant_experiences?.length">
-                                    <div class="text-gray-400 mb-1">Relevant Experiences:</div>
-                                    <ul class="list-disc list-inside text-gray-300 space-y-1">
-                                        <li v-for="exp in selectedMessage.subconscious_analysis.relevant_experiences" :key="exp">[[ exp ]]</li>
+                                    <div class="text-gray-400 mb-1 font-medium">💡 Relevant Experiences:</div>
+                                    <ul class="list-disc list-inside text-blue-300 space-y-1 ml-2">
+                                        <li v-for="exp in selectedMessage.subconscious_analysis.relevant_experiences" :key="exp" class="text-sm">[[ exp ]]</li>
                                     </ul>
                                 </div>
                                 
                                 <div v-if="selectedMessage.subconscious_analysis.relevant_knowledge?.length">
-                                    <div class="text-gray-400 mb-1">Relevant Knowledge:</div>
-                                    <ul class="list-disc list-inside text-gray-300 space-y-1">
-                                        <li v-for="know in selectedMessage.subconscious_analysis.relevant_knowledge" :key="know">[[ know ]]</li>
+                                    <div class="text-gray-400 mb-1 font-medium">📚 Relevant Knowledge:</div>
+                                    <ul class="list-disc list-inside text-gray-300 space-y-1 ml-2">
+                                        <li v-for="know in selectedMessage.subconscious_analysis.relevant_knowledge" :key="know" class="text-sm">[[ know ]]</li>
+                                    </ul>
+                                </div>
+                                
+                                <div v-if="selectedMessage.subconscious_analysis.applicable_principles?.length">
+                                    <div class="text-gray-400 mb-1 font-medium">📜 Applied Principles:</div>
+                                    <ul class="list-disc list-inside text-purple-300 space-y-1 ml-2">
+                                        <li v-for="prin in selectedMessage.subconscious_analysis.applicable_principles" :key="prin" class="text-sm">[[ prin ]]</li>
                                     </ul>
                                 </div>
                             </div>
@@ -1705,6 +1893,111 @@
                             <div v-for="(thought, idx) in selectedMessage.thought_history" :key="idx" class="bg-gray-900 rounded-lg p-3">
                                 <div class="text-xs font-semibold text-cyan-300 mb-1">[[ thought.step ]]</div>
                                 <div class="text-xs text-gray-400">[[ thought.content ]]</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Archive Viewer Modal -->
+        <div v-if="showArchiveViewer" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" @click.self="closeArchiveViewer">
+            <div class="bg-gray-800 rounded-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <div class="sticky top-0 bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between">
+                    <h3 class="text-lg font-semibold flex items-center">
+                        <span class="mr-2">📦</span>
+                        Knowledge Archive - Source Traceability
+                    </h3>
+                    <button @click="closeArchiveViewer" class="text-gray-400 hover:text-white text-xl">✕</button>
+                </div>
+                
+                <div class="p-4 border-b border-gray-700">
+                    <div class="flex items-center space-x-4">
+                        <label class="text-sm text-gray-400">Category:</label>
+                        <select v-model="archiveCategory" @change="loadArchive()" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2">
+                            <option value="principles">Principles</option>
+                            <option value="experiences">Experiences</option>
+                            <option value="core_knowledge">Core Knowledge</option>
+                            <option value="challenges">Challenges</option>
+                            <option value="values">Values</option>
+                        </select>
+                        <button @click="loadArchive()" :disabled="archiveLoading" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
+                            <span v-if="archiveLoading">Loading...</span>
+                            <span v-else>🔄 Load Archives</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto p-4">
+                    <!-- Archive List -->
+                    <div v-if="!selectedArchive" class="space-y-3">
+                        <div v-if="archiveData.length === 0 && !archiveLoading" class="text-center text-gray-500 py-8">
+                            <p>No archives found for this category.</p>
+                            <p class="text-sm mt-2">Archives are created during sleep/consolidation cycles.</p>
+                        </div>
+                        
+                        <div v-for="archive in archiveData" :key="archive.timestamp" 
+                             @click="viewArchiveDetail(archive)"
+                             class="bg-gray-700 rounded-lg p-4 cursor-pointer hover:bg-gray-600 transition-colors">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-medium text-purple-400">[[ formatArchiveDate(archive.timestamp) ]]</span>
+                                <span class="text-sm text-gray-400">[[ archive.items?.length || 0 ]] items</span>
+                            </div>
+                            <div class="text-sm text-gray-400">
+                                <span v-if="archive.mappings" class="text-green-400">✓ Has source mappings</span>
+                                <span v-else class="text-yellow-500">⚠ No mappings (pre-update archive)</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Archive Detail View -->
+                    <div v-else class="space-y-4">
+                        <button @click="selectedArchive = null" class="text-purple-400 hover:text-purple-300 flex items-center">
+                            ← Back to archive list
+                        </button>
+                        
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <h4 class="font-medium mb-2">Archive: [[ formatArchiveDate(selectedArchive.timestamp) ]]</h4>
+                            <div class="text-sm text-gray-400 space-y-1">
+                                <p><span class="text-gray-500">Items:</span> [[ selectedArchive.items?.length || 0 ]]</p>
+                                <p v-if="selectedArchive.meta?.archived_by"><span class="text-gray-500">Archived by:</span> [[ selectedArchive.meta.archived_by ]]</p>
+                                <p v-if="selectedArchive.meta?.reason"><span class="text-gray-500">Reason:</span> [[ selectedArchive.meta.reason ]]</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Source Mappings (if available) -->
+                        <div v-if="selectedArchive.mappings" class="bg-gray-700 rounded-lg p-4">
+                            <h4 class="font-medium mb-3 text-green-400">📊 Condensation Mappings</h4>
+                            <p class="text-sm text-gray-400 mb-4">
+                                Shows which original items were combined into each condensed item.
+                            </p>
+                            <div class="space-y-4">
+                                <div v-for="(mapping, idx) in selectedArchive.mappings.mappings" :key="idx" 
+                                     class="bg-gray-800 rounded-lg p-3">
+                                    <div class="text-sm text-purple-400 mb-2">
+                                        Condensed Item #[[ mapping.condensed_index + 1 ]] 
+                                        <span class="text-gray-500">(from items [[ mapping.source_indices.map(i => i + 1).join(', ') ]])</span>
+                                    </div>
+                                    <div class="space-y-2 pl-4 border-l-2 border-purple-500">
+                                        <div v-for="(sourceItem, sIdx) in mapping.source_items" :key="sIdx" 
+                                             class="text-sm text-gray-300 bg-gray-900 rounded p-2">
+                                            <span class="text-yellow-400 text-xs">#[[ mapping.source_indices[sIdx] + 1 ]]</span>
+                                            [[ sourceItem ]]
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Original Items -->
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <h4 class="font-medium mb-3">📝 Original Archived Items</h4>
+                            <div class="space-y-2 max-h-96 overflow-y-auto">
+                                <div v-for="(item, idx) in selectedArchive.items" :key="idx" 
+                                     class="text-sm text-gray-300 bg-gray-800 rounded p-3">
+                                    <span class="text-yellow-400 text-xs mr-2">#[[ idx + 1 ]]</span>
+                                    [[ item ]]
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1977,6 +2270,13 @@
                         challenges: true
                     },
                     
+                    // Archive Viewer
+                    showArchiveViewer: false,
+                    archiveCategory: 'principles',
+                    archiveData: [],
+                    archiveLoading: false,
+                    selectedArchive: null,
+                    
                     // Create Actor
                     showCreateActor: false,
                     createActorMode: 'ai',
@@ -1998,15 +2298,19 @@
                     sleepStatus: { has_data: false, datasets: [] },
                     sleepOptions: {
                         includeDreams: true,
-                        format: 'alpaca'
+                        format: 'alpaca',
+                        adapter: ''  // LoRA adapter to use for sleep LLM calls (empty = base model)
                     },
                     lastSleepResult: null,
                     selectedDatasets: [],
                     mergeLoading: false,
                     
                     // Remote Training
-                    trainerStatus: { enabled: false, connected: false, base_model: null },
+                    trainerStatus: { enabled: false, connected: false, base_model: null, available_models: [] },
                     trainingConfig: {
+                        base_model: '',      // Selected base model for training
+                        base_adapter: '',    // LoRA-on-LoRA: existing adapter to build upon
+                        dataset: '',         // Selected dataset file
                         num_epochs: 3,
                         lora_r: 16,
                         lora_alpha: 32,
@@ -2130,6 +2434,11 @@
                     return this.categoryDetailItems.filter(item => 
                         item.toLowerCase().includes(search)
                     );
+                },
+                // Training Tab computed properties
+                selectedTrainingDataset() {
+                    if (!this.trainingConfig.dataset || !this.sleepStatus.datasets) return null;
+                    return this.sleepStatus.datasets.find(d => d.filename === this.trainingConfig.dataset);
                 }
             },
             methods: {
@@ -2180,6 +2489,48 @@
                     Object.keys(this.expandedCategories).forEach(key => {
                         this.expandedCategories[key] = false;
                     });
+                },
+                
+                // Archive Viewer Methods
+                async loadArchive(category) {
+                    this.archiveCategory = category || this.archiveCategory;
+                    this.archiveLoading = true;
+                    this.selectedArchive = null;
+                    
+                    try {
+                        const res = await fetch(`/api/actor/${this.selectedActor}/archive/${this.archiveCategory}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            this.archiveData = data.archives || [];
+                        } else {
+                            this.archiveData = [];
+                        }
+                    } catch (e) {
+                        console.error('Failed to load archive:', e);
+                        this.archiveData = [];
+                    }
+                    this.archiveLoading = false;
+                },
+                
+                async viewArchiveDetail(archive) {
+                    this.selectedArchive = archive;
+                },
+                
+                closeArchiveViewer() {
+                    this.showArchiveViewer = false;
+                    this.archiveData = [];
+                    this.selectedArchive = null;
+                },
+                
+                formatArchiveDate(timestamp) {
+                    if (!timestamp) return 'Unknown';
+                    // Format: 20241221_143022
+                    const year = timestamp.substring(0, 4);
+                    const month = timestamp.substring(4, 6);
+                    const day = timestamp.substring(6, 8);
+                    const hour = timestamp.substring(9, 11);
+                    const min = timestamp.substring(11, 13);
+                    return `${year}-${month}-${day} ${hour}:${min}`;
                 },
                 
                 // Category Detail Modal Methods
@@ -2323,6 +2674,19 @@
                     this.selectedMessage = msg;
                     this.selectedMessageIndex = idx;
                     this.showMessageDetailsModal = true;
+                },
+                
+                showLastMessageDetails() {
+                    // Find the last assistant message with cognitive data
+                    for (let i = this.chatHistory.length - 1; i >= 0; i--) {
+                        const msg = this.chatHistory[i];
+                        if (msg.role === 'assistant' && msg.cognitive) {
+                            this.selectedMessage = msg;
+                            this.selectedMessageIndex = i;
+                            this.showMessageDetailsModal = true;
+                            return;
+                        }
+                    }
                 },
                 
                 async saveSettings() {
@@ -2534,7 +2898,8 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 include_dreams: this.sleepOptions.includeDreams,
-                                format: this.sleepOptions.format
+                                format: this.sleepOptions.format,
+                                adapter: this.sleepOptions.adapter  // LoRA adapter to use
                             })
                         });
                         
@@ -2798,6 +3163,9 @@
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
+                                base_model: this.trainingConfig.base_model || null,
+                                base_adapter: this.trainingConfig.base_adapter || null,
+                                dataset: this.trainingConfig.dataset || null,
                                 num_epochs: parseInt(this.trainingConfig.num_epochs),
                                 lora_r: parseInt(this.trainingConfig.lora_r),
                                 lora_alpha: parseInt(this.trainingConfig.lora_alpha),

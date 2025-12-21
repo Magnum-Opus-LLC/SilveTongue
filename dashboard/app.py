@@ -210,6 +210,75 @@ def api_actor_knowledge(actor_name, knowledge_type):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/actor/<actor_name>/archive/<category>')
+def api_actor_archive(actor_name, category):
+    """Get archived items for a category with source mappings."""
+    actor_root = get_actor_root(actor_name)
+    archive_dir = actor_root / 'archive' / category
+    
+    if not archive_dir.exists():
+        return jsonify({'error': f'No archive found for {category}'}), 404
+    
+    archives = []
+    for file in sorted(archive_dir.glob('*.yaml'), reverse=True):
+        try:
+            with open(file, 'r') as f:
+                data = yaml.safe_load(f)
+            
+            # Check for corresponding mappings file
+            timestamp = file.stem.replace(f'{category}_', '')
+            mappings_file = archive_dir / f'{category}_{timestamp}_mappings.json'
+            mappings = None
+            if mappings_file.exists():
+                with open(mappings_file, 'r') as f:
+                    mappings = json.load(f)
+            
+            archives.append({
+                'filename': file.name,
+                'timestamp': timestamp,
+                'items': data.get(category, []),
+                'meta': data.get('_meta', {}),
+                'mappings': mappings
+            })
+        except Exception as e:
+            continue
+    
+    return jsonify({'archives': archives})
+
+
+@app.route('/api/actor/<actor_name>/archive/<category>/<timestamp>')
+def api_actor_archive_detail(actor_name, category, timestamp):
+    """Get specific archive with full details and mappings."""
+    actor_root = get_actor_root(actor_name)
+    archive_dir = actor_root / 'archive' / category
+    
+    archive_file = archive_dir / f'{category}_{timestamp}.yaml'
+    mappings_file = archive_dir / f'{category}_{timestamp}_mappings.json'
+    
+    if not archive_file.exists():
+        return jsonify({'error': 'Archive not found'}), 404
+    
+    try:
+        with open(archive_file, 'r') as f:
+            archive_data = yaml.safe_load(f)
+        
+        result = {
+            'category': category,
+            'timestamp': timestamp,
+            'items': archive_data.get(category, []),
+            'meta': archive_data.get('_meta', {}),
+            'mappings': None
+        }
+        
+        if mappings_file.exists():
+            with open(mappings_file, 'r') as f:
+                result['mappings'] = json.load(f)
+        
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/actor/<actor_name>/knowledge/<knowledge_type>', methods=['POST'])
 def api_add_knowledge(actor_name, knowledge_type):
     """Add new knowledge item."""
@@ -535,6 +604,41 @@ Provide a thoughtful, helpful response that reflects your knowledge and characte
             # Save chat history
             _save_chat_turn(actor_name, message, response)
             
+            # Build detailed thought history for the UI
+            thought_history = [
+                {"step": "Request Analysis", "content": f"Analyzing request in domain: {analysis.get('domain', 'General')}"},
+                {"step": "Intent Detection", "content": f"Detected intent: {analysis.get('intent', 'Unknown')} | Complexity: {analysis.get('complexity', 'medium')}"},
+            ]
+            
+            # Add retrieved knowledge step
+            knowledge_count = len(analysis.get('relevant_knowledge', []))
+            if knowledge_count > 0:
+                thought_history.append({
+                    "step": "Knowledge Retrieval",
+                    "content": f"Retrieved {knowledge_count} relevant knowledge items from memory"
+                })
+            
+            # Add experiences step
+            exp_count = len(analysis.get('relevant_experiences', []))
+            if exp_count > 0:
+                thought_history.append({
+                    "step": "Experience Matching",
+                    "content": f"Found {exp_count} relevant past experiences to apply"
+                })
+            
+            # Add principles step
+            principles_count = len(analysis.get('applicable_principles', []))
+            if principles_count > 0:
+                thought_history.append({
+                    "step": "Principle Application",
+                    "content": f"Applying {principles_count} guiding principles to response"
+                })
+            
+            thought_history.append({
+                "step": "Response Generation",
+                "content": "Synthesizing response using retrieved context and character traits"
+            })
+            
             return jsonify({
                 'response': response,
                 'actor': actor_name,
@@ -543,10 +647,7 @@ Provide a thoughtful, helpful response that reflects your knowledge and characte
                 'subconscious_analysis': analysis,
                 'conscious_prompt': conscious_prompt,
                 'analysis': analysis,
-                'thought_history': [
-                    {"step": "Subconscious Analysis", "content": f"Domain: {analysis.get('domain', 'Unknown')}"},
-                    {"step": "Conscious Processing", "content": "Applied principles and relevant knowledge"}
-                ]
+                'thought_history': thought_history
             })
         else:
             # Non-cognitive mode: Still use subconscious for context but simpler processing
@@ -1041,9 +1142,10 @@ def api_actor_sleep(actor_name):
         data = request.json or {}
         include_dreams = data.get('include_dreams', True)
         output_format = data.get('format', 'alpaca')  # alpaca, sharegpt, or full
+        adapter = data.get('adapter', '')  # LoRA adapter to use for LLM calls (empty = base model)
         
         # Use verbose=True so we can see consolidation logs
-        processor = SleepProcessor(actor_name, verbose=True)
+        processor = SleepProcessor(actor_name, verbose=True, model_override=adapter if adapter else None)
         
         # Run complete sleep cycle (includes dreams by default)
         result = processor.sleep()
@@ -1193,8 +1295,8 @@ def translate_path_for_server(local_path: str) -> str:
     # So /mnt/silvertongueArray/array/data/steve/... becomes /datasets/steve/...
     
     # First, convert Mac path to what the DGX host sees
-    # Mac: /Users/ruihe/mnt/silvertongueArray/array/...
-    # DGX: /mnt/silvertongueArray/array/...
+    # Mac: /Users/ruihe/mnt/silvertongueArray/array
+    # DGX: /mnt/silvertongueArray/array
     mac_mount = '/Users/ruihe/mnt/silvertongueArray/array'
     dgx_mount = '/mnt/silvertongueArray/array'
     
@@ -1230,12 +1332,24 @@ def api_trainer_status():
         import requests
         response = requests.get(f"{get_trainer_url()}/health", timeout=5)
         if response.ok:
-            data = response.json()
+            health_data = response.json()
+            
+            # Also fetch config to get available models
+            available_models = []
+            try:
+                config_response = requests.get(f"{get_trainer_url()}/api/config", timeout=5)
+                if config_response.ok:
+                    config_data = config_response.json()
+                    available_models = config_data.get('available_models', [])
+            except:
+                pass  # Non-critical, just won't show model options
+            
             return jsonify({
                 'enabled': True,
                 'connected': True,
-                'base_model': data.get('base_model', 'Unknown'),
-                'server': data,
+                'base_model': health_data.get('base_model', 'Unknown'),
+                'available_models': available_models,
+                'server': health_data,
                 'url': get_trainer_url()
             })
     except Exception as e:
@@ -1296,7 +1410,8 @@ def api_start_training(actor_name):
     
     # Check request for specific dataset
     data = request.json or {}
-    requested_dataset = data.get('dataset_file')
+    requested_dataset = data.get('dataset') or data.get('dataset_file')  # Support both field names
+    requested_base_model = data.get('base_model')  # Custom base model selection
     
     if requested_dataset:
         train_file = lora_dir / requested_dataset
@@ -1332,21 +1447,31 @@ def api_start_training(actor_name):
     # Translate local path to server path
     server_dataset_path = translate_path_for_server(str(train_file))
     
-    # Build training config - use server's expected field names
+    # Handle base_adapter for LoRA-on-LoRA training
+    requested_base_adapter = data.get('base_adapter')
+    server_base_adapter = None
+    if requested_base_adapter:
+        # Translate the adapter path for the server
+        server_base_adapter = translate_path_for_server(requested_base_adapter)
+    
+    # Build training config - use server's expected field names (flat structure)
     training_config = {
         'actor_name': actor_name,
-        'dataset_path': server_dataset_path,  # Use translated path for server
-        'config': {
-            'r': data.get('lora_r', 32),  # Server uses 'r' not 'lora_r'
-            'lora_alpha': data.get('lora_alpha', 64),
-            'lora_dropout': data.get('lora_dropout', 0.05),
-            'learning_rate': data.get('learning_rate', 2e-4),
-            'num_epochs': data.get('num_epochs', 3),
-            'batch_size': data.get('batch_size', 4),
-            'gradient_accumulation_steps': data.get('gradient_accumulation_steps', 4),
-            'max_seq_length': data.get('max_seq_length', 2048),
-        }
+        'train_file': server_dataset_path,  # Server expects 'train_file'
+        'base_model': requested_base_model,  # Custom base model (None = server default)
+        'base_adapter': server_base_adapter,  # LoRA-on-LoRA: existing adapter to build upon
+        'lora_r': data.get('lora_r', 32),
+        'lora_alpha': data.get('lora_alpha', 64),
+        'lora_dropout': data.get('lora_dropout', 0.05),
+        'learning_rate': data.get('learning_rate', 2e-4),
+        'num_epochs': data.get('num_epochs', 3),
+        'batch_size': data.get('batch_size', 4),
+        'gradient_accumulation_steps': data.get('gradient_accumulation_steps', 4),
+        'max_seq_length': data.get('max_seq_length', 2048),
     }
+    
+    # Remove None values so server uses its defaults
+    training_config = {k: v for k, v in training_config.items() if v is not None}
     
     try:
         import requests

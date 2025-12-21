@@ -33,6 +33,7 @@ Usage:
 """
 
 import json
+import re
 import yaml
 import hashlib
 from pathlib import Path
@@ -40,9 +41,14 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
 
 from src.utils.knowledge_base import KnowledgeBase
 from src.utils.chat_utils import get_chat_completion, load_config
+
+# Default max concurrent LLM requests (can be overridden in config)
+DEFAULT_MAX_CONCURRENT_REQUESTS = 4
 
 
 @dataclass
@@ -135,16 +141,18 @@ class SleepProcessor:
     personality, knowledge, and reasoning patterns.
     """
     
-    def __init__(self, actor_name: str = 'template', verbose: bool = True):
+    def __init__(self, actor_name: str = 'template', verbose: bool = True, model_override: Optional[str] = None):
         """
         Initialize the Sleep Processor.
         
         Args:
             actor_name: Name of the actor to process
             verbose: Whether to print progress
+            model_override: Optional LoRA adapter name to use for LLM calls (None = base model)
         """
         self.actor_name = actor_name
         self.verbose = verbose
+        self.model_override = model_override
         
         # Load config
         config = load_config()
@@ -166,10 +174,38 @@ class SleepProcessor:
         self.min_quality_score = 0.5
         self.include_metadata = True
         
+        if self.model_override:
+            self._log(f"🎯 Using LoRA adapter: {self.model_override}")
+        
     def _log(self, message: str):
         """Print message if verbose."""
         if self.verbose:
             print(message)
+    
+    def _llm_call(self, messages: List[Dict], temperature: float = 0.3) -> str:
+        """
+        Make an LLM call with optional LoRA adapter override.
+        
+        Args:
+            messages: List of message dictionaries (role, content)
+            temperature: Sampling temperature
+            
+        Returns:
+            The content of the response message
+        """
+        try:
+            response = get_chat_completion(messages, temperature=temperature, model_override=self.model_override)
+            return response
+        except Exception as e:
+            error_msg = str(e)
+            
+            # If using a LoRA adapter that doesn't exist, fall back to base model
+            if self.model_override and ('does not exist' in error_msg or '404' in error_msg):
+                self._log(f"   ⚠️ LoRA adapter '{self.model_override}' not available, falling back to base model")
+                response = get_chat_completion(messages, temperature=temperature, model_override=None)
+                return response
+            else:
+                raise
     
     def sleep(self, output_path: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -282,6 +318,49 @@ class SleepProcessor:
             condensed_items = self._condense_items(category_name, items, frequently_used)
             
             if condensed_items:
+                # Extract source mappings from [Items X,Y,Z] references before stripping
+                # This creates a traceable link back to archived originals
+                source_mappings = []
+                cleaned_items = []
+                for idx, item in enumerate(condensed_items):
+                    # Extract item references like [Items 1, 3, 7] or [Item 5]
+                    ref_match = re.match(r'^\[Items?\s*([\d,\s]+)\]', item)
+                    if ref_match:
+                        # Parse the item numbers (1-indexed in prompts)
+                        ref_nums = [int(n.strip()) for n in ref_match.group(1).split(',') if n.strip().isdigit()]
+                        # Convert to 0-indexed and get original items
+                        source_items = [items[n-1] for n in ref_nums if 0 < n <= len(items)]
+                        source_mappings.append({
+                            'condensed_index': idx,
+                            'source_indices': [n-1 for n in ref_nums if 0 < n <= len(items)],
+                            'source_items': source_items
+                        })
+                    # Strip the reference prefix for clean storage
+                    cleaned_item = re.sub(r'^\[Items?\s*[\d,\s]+\]\s*', '', item)
+                    cleaned_items.append(cleaned_item)
+                condensed_items = cleaned_items
+                
+                # Check if we actually achieved condensation
+                actually_condensed = len(condensed_items) < len(items)
+                
+                # Save source mappings to a separate file for traceability
+                if source_mappings:
+                    mappings_file = archive_dir / f"{category_name}_{timestamp}_mappings.json"
+                    mappings_data = {
+                        'category': category_name,
+                        'timestamp': timestamp,
+                        'archive_file': str(archive_file),
+                        'original_count': len(items),
+                        'condensed_count': len(condensed_items),
+                        'mappings': source_mappings
+                    }
+                    try:
+                        with open(mappings_file, 'w') as f:
+                            json.dump(mappings_data, f, indent=2)
+                        self._log(f"      ✓ Saved source mappings to {mappings_file.name}")
+                    except Exception as e:
+                        self._log(f"      ⚠ Could not save mappings: {e}")
+                
                 # Update the main file with condensed items
                 new_data = {
                     category_name: condensed_items,
@@ -291,7 +370,9 @@ class SleepProcessor:
                         'consolidation_info': {
                             'original_count': len(items),
                             'condensed_count': len(condensed_items),
+                            'reduction_achieved': actually_condensed,
                             'archived_to': str(archive_file),
+                            'mappings_file': str(mappings_file) if source_mappings else None,
                             'timestamp': timestamp
                         }
                     }
@@ -301,7 +382,11 @@ class SleepProcessor:
                     file_path.parent.mkdir(parents=True, exist_ok=True)
                     with open(file_path, 'w') as f:
                         yaml.dump(new_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-                    self._log(f"      ✓ Updated with {len(condensed_items)} condensed items")
+                    if actually_condensed:
+                        reduction_pct = int((1 - len(condensed_items)/len(items)) * 100)
+                        self._log(f"      ✓ Condensed {len(items)} → {len(condensed_items)} items ({reduction_pct}% reduction)")
+                    else:
+                        self._log(f"      ⚠ No condensation achieved, kept {len(items)} original items")
                 except Exception as e:
                     self._log(f"      ⚠ Could not update {category_name}: {e}")
     
@@ -329,9 +414,33 @@ class SleepProcessor:
         Use LLM to condense and remove redundancy from a list of items.
         The model decides the optimal number of items to retain.
         Returns condensed list with references to originals.
+        
+        For large item lists, batches into chunks to fit within context window.
         """
         if len(items) <= 5:
             return items
+        
+        frequently_used = frequently_used or []
+        
+        # Dynamically calculate batch size based on actual content length
+        # Estimate ~4 chars per token (conservative for English text)
+        total_chars = sum(len(item) for item in items)
+        avg_chars_per_item = total_chars / len(items)
+        avg_tokens_per_item = avg_chars_per_item / 4
+        
+        # Target max ~15K tokens for items to leave room for prompt (~2K) and response (~8K)
+        # Stay well under 32K context limit
+        MAX_INPUT_TOKENS = 15000
+        max_items_per_batch = max(20, int(MAX_INPUT_TOKENS / max(avg_tokens_per_item, 10)))
+        
+        # Cap at reasonable maximum
+        MAX_ITEMS_PER_BATCH = min(max_items_per_batch, 100)
+        
+        self._log(f"      📊 Avg item length: {int(avg_chars_per_item)} chars (~{int(avg_tokens_per_item)} tokens), batch size: {MAX_ITEMS_PER_BATCH}")
+        
+        # If items exceed batch size, process in batches
+        if len(items) > MAX_ITEMS_PER_BATCH:
+            return self._condense_items_batched(category_name, items, frequently_used, MAX_ITEMS_PER_BATCH)
         
         # Calculate target size - be less aggressive for better quality
         # Aim for 20-40% reduction depending on size
@@ -346,7 +455,6 @@ class SleepProcessor:
             target_max = int(len(items) * 0.9)   # Up to 90%
         
         # Mark frequently-used items
-        frequently_used = frequently_used or []
         items_with_markers = []
         for i, item in enumerate(items):
             marker = " 🔥FREQUENTLY_USED" if i in frequently_used else ""
@@ -371,16 +479,21 @@ Guidelines:
 - Merge 2-4 related items together when they share a common theme
 - Keep unique, unrelated items separate (don't force merging of unrelated concepts)
 - Aim for {target_min}-{target_max} final items (about 20-40% reduction)
-- Each condensed item should be comprehensive but focused
+
+**CRITICAL: Each condensed item MUST be a self-contained, complete sentence or paragraph.**
+- The summarized item should convey its core idea fully without requiring external context
+- A reader should understand the concept just from reading that single item
+- Include enough detail to make the insight actionable and meaningful on its own
+- Avoid fragments, bullet-style shorthand, or incomplete thoughts
 
 Return ONLY a valid JSON array of strings. Each string must start with item references.
-Format: ["[Items 1,3] Combined concept...", "[Items 2,5,7] Merged principle...", "[Item 4] Unique insight..."]
+Format: ["[Items 1,3] Complete sentence explaining the combined concept with enough context to understand it standalone.", "[Items 2,5,7] Full paragraph that conveys the merged principle in a self-contained way.", "[Item 4] A complete, standalone statement of this unique insight."]
 
 JSON array only, no code blocks, no explanations:"""
 
         try:
-            response = get_chat_completion([
-                {"role": "system", "content": f"You are an expert at consolidating knowledge for {self.actor_name}. You merge related concepts while preserving unique insights. Always include item references."},
+            response = self._llm_call([
+                {"role": "system", "content": f"You are an expert at consolidating knowledge for {self.actor_name}. You merge related concepts while preserving unique insights. Always include item references. IMPORTANT: Each summarized item must be a self-contained, complete sentence or paragraph that conveys its core idea fully without requiring external context."},
                 {"role": "user", "content": prompt}
             ], temperature=0.3)
             
@@ -398,6 +511,27 @@ JSON array only, no code blocks, no explanations:"""
             if isinstance(condensed, list) and len(condensed) > 0:
                 reduction_pct = int((1 - len(condensed)/len(items)) * 100)
                 self._log(f"      ✓ Model condensed {len(items)} → {len(condensed)} items ({reduction_pct}% reduction)")
+                
+                # Validate content quality - reject placeholder responses
+                placeholder_patterns = ['Combined concept...', 'Merged principle...', 
+                                        'Unique insight...', 'Integrated concept...',
+                                        'Consolidated concept...', 'Synthesized concept...']
+                has_placeholders = any(
+                    any(pattern in item for pattern in placeholder_patterns)
+                    for item in condensed
+                )
+                
+                if has_placeholders:
+                    self._log(f"      ⚠ Detected placeholder text in response, keeping originals")
+                    return items
+                
+                # Validate minimum content length (condensed items should be substantive)
+                min_content_length = 50  # Minimum chars after removing [Items X,Y]
+                short_items = [item for item in condensed 
+                               if len(item.split(']', 1)[-1].strip() if ']' in item else item) < min_content_length]
+                if len(short_items) > len(condensed) * 0.3:  # More than 30% are too short
+                    self._log(f"      ⚠ Too many short/empty items ({len(short_items)}/{len(condensed)}), keeping originals")
+                    return items
                 
                 # Accept if we reduced the count meaningfully (at least 10% reduction)
                 if len(condensed) < len(items) * 0.9:
@@ -422,6 +556,249 @@ JSON array only, no code blocks, no explanations:"""
         except Exception as e:
             self._log(f"      ⚠ Condensation failed: {e}, keeping originals")
             return items
+
+    def _condense_items_batched(self, category_name: str, items: List[str], 
+                                 frequently_used: List[int], batch_size: int) -> List[str]:
+        """
+        Process large item lists in batches to fit within context window.
+        Each batch is condensed independently IN PARALLEL, then results are combined.
+        Iteratively condenses until the model determines size is reasonable.
+        """
+        total_original = len(items)
+        current_items = items[:]  # Make a copy
+        current_freq_used = frequently_used[:]
+        iteration = 1
+        max_iterations = 5  # Safety limit
+        
+        # Get max concurrent requests from config or use default
+        max_workers = self._get_max_concurrent_requests()
+        
+        # Target: reduce to a reasonable size (roughly 100-200 items for most categories)
+        target_size = min(200, max(50, total_original // 10))  # 10% of original, min 50, max 200
+        
+        self._log(f"      🎯 Target size: {target_size} items (from {total_original})")
+        self._log(f"      🔄 Using {max_workers} parallel workers")
+        
+        while len(current_items) > batch_size and iteration <= max_iterations:
+            self._log(f"      📦 Iteration {iteration}: Processing {len(current_items)} items in batches of {batch_size}...")
+            
+            # Split into batches
+            batches = []
+            for i in range(0, len(current_items), batch_size):
+                batch_items = current_items[i:i + batch_size]
+                batch_frequently_used = [
+                    idx - i for idx in current_freq_used 
+                    if i <= idx < i + batch_size
+                ]
+                batches.append((batch_items, batch_frequently_used, i))
+            
+            num_batches = len(batches)
+            self._log(f"      📦 Split into {num_batches} batches, processing in parallel...")
+            
+            # Process batches in parallel
+            all_condensed = [None] * num_batches  # Pre-allocate to maintain order
+            batches_failed = 0
+            
+            with ThreadPoolExecutor(max_workers=min(max_workers, num_batches)) as executor:
+                # Submit all batch jobs
+                future_to_batch = {}
+                for batch_idx, (batch_items, batch_freq_used, offset) in enumerate(batches):
+                    future = executor.submit(
+                        self._condense_single_batch,
+                        category_name, batch_items, batch_freq_used, offset
+                    )
+                    future_to_batch[future] = (batch_idx, len(batch_items))
+                
+                # Collect results as they complete
+                completed = 0
+                for future in as_completed(future_to_batch):
+                    batch_idx, original_len = future_to_batch[future]
+                    completed += 1
+                    try:
+                        batch_condensed = future.result()
+                        all_condensed[batch_idx] = batch_condensed
+                        
+                        # Check if this batch actually condensed
+                        if len(batch_condensed) >= original_len:
+                            batches_failed += 1
+                        
+                        # Progress update every few batches
+                        if completed % max(1, num_batches // 4) == 0 or completed == num_batches:
+                            self._log(f"      📦 Completed {completed}/{num_batches} batches...")
+                    except Exception as e:
+                        self._log(f"      ⚠ Batch {batch_idx + 1} failed: {e}")
+                        # Use original items for this batch
+                        all_condensed[batch_idx] = batches[batch_idx][0]
+                        batches_failed += 1
+            
+            # Flatten results (all_condensed is list of lists)
+            flattened = []
+            for batch_result in all_condensed:
+                if batch_result:
+                    flattened.extend(batch_result)
+            
+            # Calculate reduction for this iteration
+            prev_count = len(current_items)
+            reduction_pct = int((1 - len(flattened) / prev_count) * 100)
+            self._log(f"      ✓ Iteration {iteration}: {prev_count} → {len(flattened)} items ({reduction_pct}% reduction)")
+            
+            if batches_failed > 0:
+                self._log(f"      ⚠ {batches_failed}/{num_batches} batches had no reduction")
+            
+            # Check if we made meaningful progress
+            if len(flattened) >= prev_count * 0.95:
+                self._log(f"      ⚠ Minimal reduction ({reduction_pct}%), stopping iterations")
+                current_items = flattened
+                break
+            
+            current_items = flattened
+            current_freq_used = []  # Reset after first iteration
+            iteration += 1
+            
+            # Check if we've reached target size
+            if len(current_items) <= target_size:
+                self._log(f"      ✓ Reached target size ({target_size}), stopping iterations")
+                break
+        
+        # Final pass if still above batch_size but reasonable size
+        if batch_size < len(current_items) <= batch_size * 2:
+            self._log(f"      📦 Final consolidation pass on {len(current_items)} items...")
+            current_items = self._condense_single_batch(category_name, current_items, [], 0)
+        
+        overall_reduction = int((1 - len(current_items) / total_original) * 100)
+        self._log(f"      ✓ Total: {total_original} → {len(current_items)} items ({overall_reduction}% overall reduction)")
+        
+        return current_items
+    
+    def _get_max_concurrent_requests(self) -> int:
+        """Get max concurrent LLM requests from config or environment."""
+        # Check environment variable first
+        env_val = os.environ.get('MAX_CONCURRENT_LLM_REQUESTS')
+        if env_val:
+            try:
+                return int(env_val)
+            except ValueError:
+                pass
+        
+        # Check config
+        try:
+            config = load_config()
+            if 'max_concurrent_requests' in config:
+                return config['max_concurrent_requests']
+        except Exception:
+            pass
+        
+        return DEFAULT_MAX_CONCURRENT_REQUESTS
+    
+    def _condense_single_batch(self, category_name: str, items: List[str], 
+                                frequently_used: List[int], offset: int) -> List[str]:
+        """
+        Condense a single batch of items. 
+        Offset is used to create correct item references back to original indices.
+        """
+        if len(items) <= 5:
+            # Small batch - return items as-is without condensation
+            return items
+        
+        # Calculate target size for this batch
+        if len(items) > 50:
+            target_min = int(len(items) * 0.5)   # More aggressive for batches
+            target_max = int(len(items) * 0.7)
+        elif len(items) > 20:
+            target_min = int(len(items) * 0.55)
+            target_max = int(len(items) * 0.75)
+        else:
+            target_min = int(len(items) * 0.6)
+            target_max = int(len(items) * 0.8)
+        
+        # Mark frequently-used items with original indices
+        items_with_markers = []
+        for i, item in enumerate(items):
+            original_idx = offset + i + 1
+            marker = " 🔥FREQUENTLY_USED" if i in frequently_used else ""
+            items_with_markers.append(f"{original_idx}. {item}{marker}")
+        
+        prompt = f"""You are consolidating {category_name} for the AI actor "{self.actor_name}".
+
+This is batch processing - item numbers reflect original positions.
+
+Original {category_name} ({len(items)} items in this batch):
+{chr(10).join(items_with_markers)}
+
+NOTE: Items marked with 🔥FREQUENTLY_USED should be kept separate (not merged).
+
+Task: Condense these items into {target_min}-{target_max} consolidated items by:
+1. **Merging closely related concepts** - combine items that overlap significantly
+2. **Removing exact duplicates** - eliminate repeated information
+3. **Preserving unique insights** - keep distinct information separate
+4. **Creating clear item references** - prefix each with source item numbers [Items X,Y,Z]
+
+**CRITICAL: Each condensed item MUST be a self-contained, complete sentence or paragraph.**
+- The summarized item should convey its core idea fully without requiring external context
+- A reader should understand the concept just from reading that single item
+- Include enough detail to make the insight actionable and meaningful on its own
+
+Return ONLY a valid JSON array of strings. Use original item numbers in references.
+Format: ["[Items X,Y] Complete, self-contained statement...", "[Item Z] Standalone insight..."]
+
+JSON array only:"""
+
+        try:
+            response = self._llm_call([
+                {"role": "system", "content": "You are an expert at consolidating knowledge. Each summarized item must be self-contained and convey its core idea fully."},
+                {"role": "user", "content": prompt}
+            ], temperature=0.3)
+            
+            # Clean response
+            response = response.strip()
+            if response.startswith('```'):
+                lines = response.split('\n')
+                response = '\n'.join(line for line in lines if not line.strip().startswith('```'))
+                response = response.strip()
+            
+            condensed = json.loads(response)
+            
+            if isinstance(condensed, list) and len(condensed) > 0:
+                # Validate - reject placeholders
+                placeholder_patterns = ['Combined concept...', 'Merged principle...', 
+                                        'Unique insight...', 'Complete, self-contained statement...',
+                                        'Standalone insight...']
+                has_placeholders = any(
+                    any(pattern in item for pattern in placeholder_patterns)
+                    for item in condensed
+                )
+                
+                if has_placeholders:
+                    self._log(f"      ⚠ Placeholder detected, returning originals")
+                    return items  # Return without references - let parent handle
+                
+                # Strip [Item X] and [Items X,Y,Z] prefixes from output for cleaner results
+                cleaned = []
+                for item in condensed:
+                    # Match [Item X] or [Items X,Y,Z] patterns at the start
+                    cleaned_item = re.sub(r'^\[Items?\s*[\d,\s]+\]\s*', '', item)
+                    cleaned.append(cleaned_item)
+                return cleaned
+            else:
+                return items  # Return without references
+                
+        except Exception as e:
+            error_str = str(e)
+            # Check if it's a context length error
+            if 'maximum context length' in error_str or 'too many tokens' in error_str.lower():
+                self._log(f"      ⚠ Context too long for batch of {len(items)}, will retry with smaller batch")
+                # Return a special marker to trigger re-batching
+                if len(items) > 20:
+                    # Split this batch in half and try again
+                    mid = len(items) // 2
+                    first_half = self._condense_single_batch(category_name, items[:mid], 
+                        [i for i in frequently_used if i < mid], offset)
+                    second_half = self._condense_single_batch(category_name, items[mid:],
+                        [i - mid for i in frequently_used if i >= mid], offset + mid)
+                    return first_half + second_half
+            
+            self._log(f"      ⚠ Batch condensation failed: {e}")
+            return items  # Return originals without references
 
     def _log_sleep_event(self, summary: dict):
         """Append a sleep event and condensed snapshot to learning_book.json."""
@@ -999,7 +1376,7 @@ JSON array only, no code blocks, no explanations:"""
 Generate 3 insightful questions someone might ask about these topics, and provide thoughtful answers that demonstrate deep understanding. Format as JSON array with 'question' and 'answer' keys."""
             
             try:
-                response = get_chat_completion([
+                response = self._llm_call([
                     {"role": "system", "content": f"You are {self.actor_name}, embodying their values and knowledge."},
                     {"role": "user", "content": prompt}
                 ], temperature=0.7)
@@ -1024,15 +1401,15 @@ Generate 3 insightful questions someone might ask about these topics, and provid
 
 
 # Convenience functions
-def sleep(actor_name: str = 'template', output_path: Optional[str] = None) -> Dict[str, Any]:
+def sleep(actor_name: str = 'template', output_path: Optional[str] = None, model_override: Optional[str] = None) -> Dict[str, Any]:
     """Put an actor to sleep and generate LoRA training data."""
-    processor = SleepProcessor(actor_name)
+    processor = SleepProcessor(actor_name, model_override=model_override)
     return processor.sleep(output_path)
 
 
-def quick_sleep(actor_name: str = 'template') -> str:
+def quick_sleep(actor_name: str = 'template', model_override: Optional[str] = None) -> str:
     """Quick sleep - returns path to generated dataset."""
-    processor = SleepProcessor(actor_name, verbose=False)
+    processor = SleepProcessor(actor_name, verbose=False, model_override=model_override)
     result = processor.sleep()
     return result.get('output_path', '')
 

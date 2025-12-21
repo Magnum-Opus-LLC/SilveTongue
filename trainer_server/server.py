@@ -48,6 +48,7 @@ class TrainingJob:
     
     # Training config
     base_model: str = "meta-llama/Llama-3.2-3B-Instruct"
+    base_adapter: Optional[str] = None  # Path to existing LoRA adapter for LoRA-on-LoRA
     train_file: str = ""
     val_file: str = ""
     output_dir: str = ""
@@ -159,11 +160,14 @@ def process_queue():
 
 def generate_training_script(job: TrainingJob) -> str:
     """Generate a training script for the job."""
+    base_adapter_line = f'BASE_ADAPTER = "{job.base_adapter}"' if job.base_adapter else 'BASE_ADAPTER = None  # No base adapter (training from scratch)'
+    
     return f'''#!/usr/bin/env python3
 """
 Auto-generated LoRA Training Script for {job.actor_name}
 Generated: {datetime.now().isoformat()}
 Job ID: {job.job_id}
+{"LoRA-on-LoRA Mode: Building on existing adapter" if job.base_adapter else "Standard LoRA Training"}
 """
 
 import os
@@ -176,11 +180,12 @@ from transformers import (
     TrainingArguments,
     BitsAndBytesConfig,
 )
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, PeftModel
 from trl import SFTTrainer
 
 # Configuration
 BASE_MODEL = "{job.base_model}"
+{base_adapter_line}
 TRAIN_FILE = "{job.train_file}"
 VAL_FILE = "{job.val_file}"
 OUTPUT_DIR = "./adapter"
@@ -231,10 +236,18 @@ def main():
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
     
+    # Handle LoRA-on-LoRA: Load and merge existing adapter first
+    if BASE_ADAPTER:
+        print(f"LoRA-on-LoRA: Loading existing adapter from: {{BASE_ADAPTER}}")
+        model = PeftModel.from_pretrained(model, BASE_ADAPTER)
+        print("Merging base adapter into model weights...")
+        model = model.merge_and_unload()
+        print("Base adapter merged. Will now train new LoRA on top.")
+    
     # Prepare model for training
     model = prepare_model_for_kbit_training(model)
     
-    # LoRA config
+    # LoRA config for new training
     peft_config = LoraConfig(
         r=LORA_R,
         lora_alpha=LORA_ALPHA,
@@ -299,6 +312,8 @@ def main():
     with open(os.path.join(OUTPUT_DIR, "training_info.json"), "w") as f:
         json.dump({{
             "base_model": BASE_MODEL,
+            "base_adapter": BASE_ADAPTER,
+            "lora_on_lora": BASE_ADAPTER is not None,
             "actor_name": "{job.actor_name}",
             "job_id": "{job.job_id}",
             "lora_config": {{
@@ -333,6 +348,7 @@ def health():
         "gpu_available": torch_gpu_available(),
         "current_job": current_job,
         "queued_jobs": len([j for j in training_jobs.values() if j.status == "queued"]),
+        "base_model": config.default_base_model,
     })
 
 
@@ -370,6 +386,7 @@ def submit_training_job():
         train_file=train_file,
         val_file=val_file if Path(val_file).exists() else train_file,
         base_model=data.get('base_model', config.default_base_model),
+        base_adapter=data.get('base_adapter'),  # LoRA-on-LoRA: existing adapter path
         lora_r=data.get('lora_r', 16),
         lora_alpha=data.get('lora_alpha', 32),
         lora_dropout=data.get('lora_dropout', 0.05),
@@ -458,11 +475,22 @@ def list_models():
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Get server configuration."""
+    # Common models available for LoRA training
+    available_models = [
+        "meta-llama/Llama-3.2-3B-Instruct",
+        "meta-llama/Llama-3.1-8B-Instruct",
+        "Qwen/Qwen2.5-7B-Instruct",
+        "Qwen/Qwen2.5-14B-Instruct",
+        "mistralai/Mistral-7B-Instruct-v0.3",
+        "nvidia/Nemotron-Mini-4B-Instruct",
+    ]
+    
     return jsonify({
         "data_dir": config.data_dir,
         "output_base": config.output_base,
         "default_base_model": config.default_base_model,
         "max_concurrent_jobs": config.max_concurrent_jobs,
+        "available_models": available_models,
     })
 
 

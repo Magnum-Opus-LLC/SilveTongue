@@ -3,6 +3,7 @@
     "apiKey": "EMPTY",
     "model": "qwen2_5",
     "max_tokens": 32768,
+    "max_concurrent_requests": 4,
     "array_dir": "/Users/ruihe/mnt/silvertongueArray/array",
     "lora_adapters_dir": "/Users/ruihe/mnt/silvertongueArray/lora_adapters",
     "trainer_server": {

@@ -83,14 +83,24 @@ def get_default_lora_config():
     }
 
 
-def train_lora_adapter(job_id: str, actor_name: str, dataset_path: Path, config: dict):
+def train_lora_adapter(job_id: str, actor_name: str, dataset_path: Path, config: dict, base_adapter: Path = None):
     """
     Train a LoRA adapter for an actor.
     Runs in a background thread.
+    
+    Args:
+        job_id: Unique job identifier
+        actor_name: Name of the actor
+        dataset_path: Path to training dataset
+        config: Training configuration
+        base_adapter: Optional path to existing adapter for continuous training (LoRA-on-LoRA)
     """
     try:
         active_jobs[job_id]["status"] = "loading"
         active_jobs[job_id]["progress"] = 0
+        
+        if base_adapter:
+            print(f"[{job_id}] Continuous training from: {base_adapter}")
         
         # Try to use Unsloth first (much faster), fall back to PEFT
         try:
@@ -102,9 +112,9 @@ def train_lora_adapter(job_id: str, actor_name: str, dataset_path: Path, config:
             print(f"[{job_id}] Unsloth not available, using PEFT")
         
         if use_unsloth:
-            train_with_unsloth(job_id, actor_name, dataset_path, config)
+            train_with_unsloth(job_id, actor_name, dataset_path, config, base_adapter)
         else:
-            train_with_peft(job_id, actor_name, dataset_path, config)
+            train_with_peft(job_id, actor_name, dataset_path, config, base_adapter)
             
     except Exception as e:
         active_jobs[job_id]["status"] = "failed"
@@ -114,11 +124,14 @@ def train_lora_adapter(job_id: str, actor_name: str, dataset_path: Path, config:
         traceback.print_exc()
 
 
-def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config: dict):
+def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config: dict, base_adapter: Path = None):
     """
     Train using Unsloth (2-5x faster than standard PEFT).
     Optimized for NVIDIA NIM container on Blackwell GPUs.
     Reference: https://build.nvidia.com/spark/unsloth
+    
+    Args:
+        base_adapter: Optional path to existing LoRA adapter for continuous training
     """
     from unsloth import FastLanguageModel
     from unsloth.chat_templates import get_chat_template
@@ -130,12 +143,24 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
     
     # Load model with Unsloth optimizations
     # 4bit loading uses less VRAM and is faster on Blackwell
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=BASE_MODEL,
-        max_seq_length=config["max_seq_length"],
-        dtype=None,  # Auto-detect (will use bfloat16 on Blackwell)
-        load_in_4bit=True,
-    )
+    if base_adapter:
+        # Continuous training: load model with existing LoRA adapter
+        print(f"[{job_id}] Loading base model with existing adapter: {base_adapter}")
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=str(base_adapter),  # Load from adapter directory
+            max_seq_length=config["max_seq_length"],
+            dtype=None,
+            load_in_4bit=True,
+        )
+        active_jobs[job_id]["base_adapter_loaded"] = str(base_adapter)
+    else:
+        # Fresh training: load base model
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=BASE_MODEL,
+            max_seq_length=config["max_seq_length"],
+            dtype=None,  # Auto-detect (will use bfloat16 on Blackwell)
+            load_in_4bit=True,
+        )
     
     # Apply chat template for instruction following
     tokenizer = get_chat_template(
@@ -146,19 +171,26 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
     active_jobs[job_id]["progress"] = 10
     active_jobs[job_id]["status"] = "configuring_lora"
     
-    # Add LoRA adapters with Unsloth optimizations
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=config["r"],
-        target_modules=config["target_modules"],
-        lora_alpha=config["lora_alpha"],
-        lora_dropout=config["lora_dropout"],
-        bias=config["bias"],
-        use_gradient_checkpointing="unsloth",  # 30% less VRAM
-        random_state=42,
-        use_rslora=True,  # Rank-stabilized LoRA for better convergence
-        loftq_config=None,
-    )
+    # Add/configure LoRA adapters with Unsloth optimizations
+    # For continuous training, this will train the loaded adapter further
+    if not base_adapter:
+        # Only add new LoRA layers if not doing continuous training
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r=config["r"],
+            target_modules=config["target_modules"],
+            lora_alpha=config["lora_alpha"],
+            lora_dropout=config["lora_dropout"],
+            bias=config["bias"],
+            use_gradient_checkpointing="unsloth",  # 30% less VRAM
+            random_state=42,
+            use_rslora=True,  # Rank-stabilized LoRA for better convergence
+            loftq_config=None,
+        )
+    else:
+        # For continuous training, just enable gradient checkpointing
+        # The adapter is already loaded from base_adapter
+        print(f"[{job_id}] Continuing training on existing adapter weights")
     
     active_jobs[job_id]["progress"] = 20
     active_jobs[job_id]["status"] = "loading_dataset"
@@ -248,10 +280,12 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
         "actor": actor_name,
         "version": version,
         "base_model": BASE_MODEL,
+        "base_adapter": str(base_adapter) if base_adapter else None,  # Track continuous training lineage
         "dataset": str(dataset_path),
         "config": config,
         "trained_at": datetime.now().isoformat(),
         "examples": len(dataset),
+        "continuous_training": base_adapter is not None,
     }
     with open(output_dir / "training_info.json", "w") as f:
         json.dump(info, f, indent=2)
@@ -265,16 +299,21 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
     print(f"[{job_id}] Training completed! Adapter saved to {output_dir}")
 
 
-def train_with_peft(job_id: str, actor_name: str, dataset_path: Path, config: dict):
-    """Train using standard PEFT (fallback if Unsloth unavailable)."""
+def train_with_peft(job_id: str, actor_name: str, dataset_path: Path, config: dict, base_adapter: Path = None):
+    """
+    Train using standard PEFT (fallback if Unsloth unavailable).
+    
+    Args:
+        base_adapter: Optional path to existing LoRA adapter for continuous training
+    """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, PeftModel
     from datasets import load_dataset
     
     active_jobs[job_id]["status"] = "loading_model"
     
-    # Load model
+    # Load base model
     model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
         torch_dtype=torch.bfloat16,
@@ -292,17 +331,23 @@ def train_with_peft(job_id: str, actor_name: str, dataset_path: Path, config: di
     # Prepare for training
     model = prepare_model_for_kbit_training(model)
     
-    # LoRA config
-    lora_config = LoraConfig(
-        r=config["r"],
-        lora_alpha=config["lora_alpha"],
-        lora_dropout=config["lora_dropout"],
-        target_modules=config["target_modules"],
-        bias=config["bias"],
-        task_type=config["task_type"],
-    )
+    if base_adapter:
+        # Continuous training: load existing adapter
+        print(f"[{job_id}] Loading existing adapter for continuous training: {base_adapter}")
+        model = PeftModel.from_pretrained(model, str(base_adapter), is_trainable=True)
+        active_jobs[job_id]["base_adapter_loaded"] = str(base_adapter)
+    else:
+        # Fresh training: create new LoRA adapter
+        lora_config = LoraConfig(
+            r=config["r"],
+            lora_alpha=config["lora_alpha"],
+            lora_dropout=config["lora_dropout"],
+            target_modules=config["target_modules"],
+            bias=config["bias"],
+            task_type=config["task_type"],
+        )
+        model = get_peft_model(model, lora_config)
     
-    model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
     
     active_jobs[job_id]["progress"] = 20
@@ -370,9 +415,11 @@ def train_with_peft(job_id: str, actor_name: str, dataset_path: Path, config: di
         "actor": actor_name,
         "version": version,
         "base_model": BASE_MODEL,
+        "base_adapter": str(base_adapter) if base_adapter else None,
         "dataset": str(dataset_path),
         "config": config,
         "trained_at": datetime.now().isoformat(),
+        "continuous_training": base_adapter is not None,
     }
     with open(output_dir / "training_info.json", "w") as f:
         json.dump(info, f, indent=2)
@@ -426,20 +473,32 @@ def start_training():
     Request body:
     {
         "actor_name": "steve",
-        "dataset_path": "/path/to/dataset.jsonl",  # or relative to DATASET_DIR
+        "dataset_path": "/path/to/dataset.jsonl",  # or "train_file" - both accepted
+        "base_adapter": "/path/to/adapter",  # optional: for continuous training (LoRA-on-LoRA)
         "config": { ... }  # optional, uses defaults if not provided
     }
     """
     data = request.json
     actor_name = data.get("actor_name")
-    dataset_path = data.get("dataset_path")
+    # Accept both 'dataset_path' and 'train_file' for compatibility
+    dataset_path = data.get("dataset_path") or data.get("train_file")
+    base_adapter = data.get("base_adapter")  # For continuous training
     config = data.get("config", {})
+    
+    # Also accept flat config parameters (merge them into config)
+    flat_params = ['lora_r', 'lora_alpha', 'lora_dropout', 'learning_rate', 
+                   'num_epochs', 'batch_size', 'gradient_accumulation_steps', 'max_seq_length']
+    for param in flat_params:
+        if param in data and data[param] is not None:
+            # Map some field names
+            config_key = 'r' if param == 'lora_r' else param
+            config[config_key] = data[param]
     
     if not actor_name:
         return jsonify({"error": "actor_name is required"}), 400
     
     if not dataset_path:
-        return jsonify({"error": "dataset_path is required"}), 400
+        return jsonify({"error": "dataset_path or train_file is required"}), 400
     
     # Resolve dataset path
     dataset_path = Path(dataset_path)
@@ -448,6 +507,16 @@ def start_training():
     
     if not dataset_path.exists():
         return jsonify({"error": f"Dataset not found: {dataset_path}"}), 404
+    
+    # Validate base_adapter if provided (for continuous training)
+    base_adapter_path = None
+    if base_adapter:
+        base_adapter_path = Path(base_adapter)
+        if not base_adapter_path.exists():
+            return jsonify({"error": f"Base adapter not found: {base_adapter}"}), 404
+        if not (base_adapter_path / "adapter_config.json").exists():
+            return jsonify({"error": f"Invalid adapter (no adapter_config.json): {base_adapter}"}), 400
+        print(f"[INFO] Continuous training from base adapter: {base_adapter}")
     
     # Merge with defaults
     full_config = get_default_lora_config()
@@ -460,6 +529,7 @@ def start_training():
         "job_id": job_id,
         "actor_name": actor_name,
         "dataset_path": str(dataset_path),
+        "base_adapter": str(base_adapter_path) if base_adapter_path else None,
         "config": full_config,
         "status": "queued",
         "progress": 0,
@@ -469,7 +539,7 @@ def start_training():
     # Start training in background thread
     thread = threading.Thread(
         target=train_lora_adapter,
-        args=(job_id, actor_name, dataset_path, full_config),
+        args=(job_id, actor_name, dataset_path, full_config, base_adapter_path),
         daemon=True
     )
     thread.start()
@@ -477,7 +547,7 @@ def start_training():
     return jsonify({
         "success": True,
         "job_id": job_id,
-        "message": f"Training started for {actor_name}",
+        "message": f"Training started for {actor_name}" + (f" (continuing from {base_adapter_path.name})" if base_adapter_path else ""),
     })
 
 
@@ -648,8 +718,19 @@ def delete_model(model_name):
 @app.route("/api/config", methods=["GET"])
 def get_config():
     """Get current server configuration."""
+    # Common models available for LoRA training
+    available_models = [
+        "meta-llama/Llama-3.2-3B-Instruct",
+        "meta-llama/Llama-3.1-8B-Instruct", 
+        "Qwen/Qwen2.5-7B-Instruct",
+        "Qwen/Qwen2.5-14B-Instruct",
+        "mistralai/Mistral-7B-Instruct-v0.3",
+        "nvidia/Nemotron-Mini-4B-Instruct",
+    ]
+    
     return jsonify({
         "base_model": BASE_MODEL,
+        "available_models": available_models,
         "lora_output_dir": str(LORA_OUTPUT_DIR),
         "dataset_dir": str(DATASET_DIR),
         "default_lora_config": get_default_lora_config(),
