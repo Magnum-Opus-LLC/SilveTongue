@@ -2957,10 +2957,14 @@
                 
                 // Remote Training Methods
                 async checkTrainerStatus() {
+                    console.log('[checkTrainerStatus] Fetching trainer status...');
                     try {
                         const res = await fetch('/api/trainer/status');
+                        console.log('[checkTrainerStatus] Response status:', res.status);
                         this.trainerStatus = await res.json();
+                        console.log('[checkTrainerStatus] Trainer status:', this.trainerStatus);
                     } catch (e) {
+                        console.error('[checkTrainerStatus] Error:', e);
                         this.trainerStatus = { enabled: false, connected: false, error: e.message };
                     }
                 },
@@ -3157,24 +3161,31 @@
                     if (!this.selectedActor || this.trainingLoading) return;
                     
                     this.trainingLoading = true;
+                    const url = `/api/actor/${this.selectedActor}/train`;
+                    console.log('[startTraining] POSTing to:', url);
                     
                     try {
-                        const res = await fetch(`/api/actor/${this.selectedActor}/train`, {
+                        const payload = {
+                            base_model: this.trainingConfig.base_model || null,
+                            base_adapter: this.trainingConfig.base_adapter || null,
+                            dataset: this.trainingConfig.dataset || null,
+                            num_epochs: parseInt(this.trainingConfig.num_epochs),
+                            lora_r: parseInt(this.trainingConfig.lora_r),
+                            lora_alpha: parseInt(this.trainingConfig.lora_alpha),
+                            learning_rate: parseFloat(this.trainingConfig.learning_rate),
+                            batch_size: parseInt(this.trainingConfig.batch_size)
+                        };
+                        console.log('[startTraining] Payload:', payload);
+                        
+                        const res = await fetch(url, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                base_model: this.trainingConfig.base_model || null,
-                                base_adapter: this.trainingConfig.base_adapter || null,
-                                dataset: this.trainingConfig.dataset || null,
-                                num_epochs: parseInt(this.trainingConfig.num_epochs),
-                                lora_r: parseInt(this.trainingConfig.lora_r),
-                                lora_alpha: parseInt(this.trainingConfig.lora_alpha),
-                                learning_rate: parseFloat(this.trainingConfig.learning_rate),
-                                batch_size: parseInt(this.trainingConfig.batch_size)
-                            })
+                            body: JSON.stringify(payload)
                         });
                         
+                        console.log('[startTraining] Response status:', res.status, res.statusText);
                         const data = await res.json();
+                        console.log('[startTraining] Response data:', data);
                         
                         if (data.error) {
                             alert('Training submission failed: ' + data.error + (data.hint ? '\n\n' + data.hint : ''));
@@ -3183,6 +3194,7 @@
                             await this.loadTrainingJobs();
                         }
                     } catch (e) {
+                        console.error('[startTraining] Error:', e);
                         alert('Training submission failed: ' + e.message);
                     }
                     

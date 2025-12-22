@@ -11,6 +11,9 @@ import yaml
 from datetime import datetime
 import threading
 import queue
+import traceback
+import re
+import requests
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -19,6 +22,16 @@ sys.path.insert(0, str(project_root))
 from flask import Flask, render_template, jsonify, request, Response
 
 app = Flask(__name__)
+
+
+@app.after_request
+def add_no_cache_headers(response):
+    """Add headers to prevent browser caching."""
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
 
 # Global state for running loops
 active_loops = {}
@@ -1285,36 +1298,57 @@ def translate_path_for_server(local_path: str) -> str:
     """
     Translate a local Mac path to the server's view inside the Docker container.
     
-    Mac mount:     /Users/ruihe/mnt/silvertongueArray/array/data/...
-    DGX host:      /mnt/silvertongueArray/array/data/...
-    Docker mount:  /datasets/...  (DATASET_DIR is mounted to /datasets)
+    The launch script mounts:
+      -v "$LORA_OUTPUT_DIR":/lora_adapters
+      -v "$DATASET_DIR":/datasets
     
-    The launch script mounts: -v "$DATASET_DIR":/datasets
-    Where DATASET_DIR=/mnt/silvertongueArray/array/data
+    Where:
+      LORA_OUTPUT_DIR=/mnt/silvertongueArray/lora_adapters
+      DATASET_DIR=/mnt/silvertongueArray/array/data
+    
+    Mac paths need to be translated:
+      /Users/ruihe/mnt/silvertongueArray/array/data/... -> /datasets/...
+      /Users/ruihe/mnt/silvertongueArray/lora_adapters/... -> /lora_adapters/...
     """
     # Get the local array_dir from config
     config = load_config()
     local_array_dir = config.get('array_dir', '')
     
-    # The Docker container mounts DATASET_DIR (/mnt/silvertongueArray/array/data) to /datasets
-    # So /mnt/silvertongueArray/array/data/steve/... becomes /datasets/steve/...
+    # Mac mount points
+    mac_array_mount = '/Users/ruihe/mnt/silvertongueArray/array'
+    mac_lora_mount = '/Users/ruihe/mnt/silvertongueArray/lora_adapters'
     
-    # First, convert Mac path to what the DGX host sees
-    # Mac: /Users/ruihe/mnt/silvertongueArray/array
-    # DGX: /mnt/silvertongueArray/array
-    mac_mount = '/Users/ruihe/mnt/silvertongueArray/array'
-    dgx_mount = '/mnt/silvertongueArray/array'
+    # DGX host paths
+    dgx_array_mount = '/mnt/silvertongueArray/array'
+    dgx_lora_mount = '/mnt/silvertongueArray/lora_adapters'
+    
+    # Docker container paths
+    docker_data_dir = '/datasets'
+    docker_lora_dir = '/lora_adapters'
     
     server_path = local_path
+    
+    # Handle LoRA adapter paths FIRST (more specific)
+    if local_path.startswith(mac_lora_mount):
+        # Mac: /Users/ruihe/mnt/silvertongueArray/lora_adapters/steve/v1
+        # Docker: /lora_adapters/steve/v1
+        server_path = local_path.replace(mac_lora_mount, docker_lora_dir)
+        return server_path
+    elif local_path.startswith(dgx_lora_mount):
+        # DGX: /mnt/silvertongueArray/lora_adapters/steve/v1
+        # Docker: /lora_adapters/steve/v1
+        server_path = local_path.replace(dgx_lora_mount, docker_lora_dir)
+        return server_path
+    
+    # Handle dataset/array paths
     if local_array_dir and local_path.startswith(local_array_dir):
-        server_path = local_path.replace(local_array_dir, dgx_mount)
-    elif local_path.startswith(mac_mount):
-        server_path = local_path.replace(mac_mount, dgx_mount)
+        server_path = local_path.replace(local_array_dir, dgx_array_mount)
+    elif local_path.startswith(mac_array_mount):
+        server_path = local_path.replace(mac_array_mount, dgx_array_mount)
     
     # Now convert DGX host path to Docker container path
     # The DATASET_DIR (/mnt/silvertongueArray/array/data) is mounted as /datasets
     dgx_data_dir = '/mnt/silvertongueArray/array/data'
-    docker_data_dir = '/datasets'
     
     if server_path.startswith(dgx_data_dir):
         server_path = server_path.replace(dgx_data_dir, docker_data_dir)
@@ -1458,6 +1492,9 @@ def api_start_training(actor_name):
     if requested_base_adapter:
         # Translate the adapter path for the server
         server_base_adapter = translate_path_for_server(requested_base_adapter)
+        print(f"[TRAIN] LoRA-on-LoRA requested:")
+        print(f"  Local adapter path: {requested_base_adapter}")
+        print(f"  Server adapter path: {server_base_adapter}")
     
     # Build training config - use server's expected field names (flat structure)
     training_config = {

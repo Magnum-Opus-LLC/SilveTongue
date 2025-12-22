@@ -141,6 +141,9 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
     
     active_jobs[job_id]["status"] = "loading_model"
     
+    # Allow base_model override from config
+    model_to_load = config.get("base_model", BASE_MODEL)
+    
     # Load model with Unsloth optimizations
     # 4bit loading uses less VRAM and is faster on Blackwell
     if base_adapter:
@@ -155,8 +158,9 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
         active_jobs[job_id]["base_adapter_loaded"] = str(base_adapter)
     else:
         # Fresh training: load base model
+        print(f"[{job_id}] Loading base model: {model_to_load}")
         model, tokenizer = FastLanguageModel.from_pretrained(
-            model_name=BASE_MODEL,
+            model_name=model_to_load,
             max_seq_length=config["max_seq_length"],
             dtype=None,  # Auto-detect (will use bfloat16 on Blackwell)
             load_in_4bit=True,
@@ -498,6 +502,7 @@ def start_training():
     # Accept both 'dataset_path' and 'train_file' for compatibility
     dataset_path = data.get("dataset_path") or data.get("train_file")
     base_adapter = data.get("base_adapter")  # For continuous training
+    base_model_override = data.get("base_model")  # Optional: override the default base model
     config = data.get("config", {})
     
     # Also accept flat config parameters (merge them into config)
@@ -508,6 +513,10 @@ def start_training():
             # Map some field names
             config_key = 'r' if param == 'lora_r' else param
             config[config_key] = data[param]
+    
+    # Handle base_model override
+    if base_model_override:
+        config['base_model'] = base_model_override
     
     if not actor_name:
         return jsonify({"error": "actor_name is required"}), 400
@@ -527,8 +536,20 @@ def start_training():
     base_adapter_path = None
     if base_adapter:
         base_adapter_path = Path(base_adapter)
+        print(f"[INFO] Checking base adapter path: {base_adapter_path}")
+        print(f"[INFO] Path exists: {base_adapter_path.exists()}")
         if not base_adapter_path.exists():
-            return jsonify({"error": f"Base adapter not found: {base_adapter}"}), 404
+            # Try to help debug by listing what's in LORA_OUTPUT_DIR
+            available = []
+            if LORA_OUTPUT_DIR.exists():
+                for d in LORA_OUTPUT_DIR.iterdir():
+                    if d.is_dir():
+                        available.append(str(d))
+            return jsonify({
+                "error": f"Base adapter not found: {base_adapter}",
+                "lora_output_dir": str(LORA_OUTPUT_DIR),
+                "available_adapters": available[:10]  # First 10
+            }), 404
         if not (base_adapter_path / "adapter_config.json").exists():
             return jsonify({"error": f"Invalid adapter (no adapter_config.json): {base_adapter}"}), 400
         print(f"[INFO] Continuous training from base adapter: {base_adapter}")
