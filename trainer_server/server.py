@@ -408,6 +408,13 @@ def submit_training_job():
     })
 
 
+# Backward compatibility: alias /train to /api/train
+@app.route('/train', methods=['POST'])
+def submit_training_job_compat():
+    """Backward-compatible alias for /api/train."""
+    return submit_training_job()
+
+
 @app.route('/api/jobs', methods=['GET'])
 def list_jobs():
     """List all training jobs."""

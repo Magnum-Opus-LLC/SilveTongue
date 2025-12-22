@@ -465,6 +465,21 @@ def health():
     })
 
 
+@app.route("/routes", methods=["GET"])
+@app.route("/api/routes", methods=["GET"])
+def list_routes():
+    """List all registered routes for debugging."""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            "endpoint": rule.endpoint,
+            "methods": list(rule.methods - {'HEAD', 'OPTIONS'}),
+            "path": rule.rule
+        })
+    routes.sort(key=lambda x: x['path'])
+    return jsonify({"routes": routes, "total": len(routes)})
+
+
 @app.route("/api/train", methods=["POST"])
 def start_training():
     """
@@ -549,6 +564,13 @@ def start_training():
         "job_id": job_id,
         "message": f"Training started for {actor_name}" + (f" (continuing from {base_adapter_path.name})" if base_adapter_path else ""),
     })
+
+
+# Backward compatibility: alias /train to /api/train
+@app.route("/train", methods=["POST"])
+def start_training_compat():
+    """Backward-compatible alias for /api/train."""
+    return start_training()
 
 
 @app.route("/api/jobs", methods=["GET"])

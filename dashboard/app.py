@@ -179,7 +179,12 @@ def add_to_yaml_list(file_path, key, item, source=None):
 def index():
     """Main dashboard page."""
     actors = get_available_actors()
-    return render_template('index.html', actors=actors)
+    response = app.make_response(render_template('index.html', actors=actors))
+    # Disable caching to ensure fresh JS
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 @app.route('/api/actors')
@@ -1504,6 +1509,13 @@ def api_start_training(actor_name):
         }), 503
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# Backward compatibility: alias without /api prefix
+@app.route('/actor/<actor_name>/train', methods=['POST'])
+def start_training_compat(actor_name):
+    """Backward-compatible alias for /api/actor/<actor_name>/train."""
+    return api_start_training(actor_name)
 
 
 @app.route('/api/trainer/jobs', methods=['GET'])
