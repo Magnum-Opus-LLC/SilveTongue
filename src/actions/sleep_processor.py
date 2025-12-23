@@ -48,7 +48,7 @@ from src.utils.knowledge_base import KnowledgeBase
 from src.utils.chat_utils import get_chat_completion, load_config
 
 # Default max concurrent LLM requests (can be overridden in config)
-DEFAULT_MAX_CONCURRENT_REQUESTS = 4
+DEFAULT_MAX_CONCURRENT_REQUESTS = 8  # Increased from 4 for faster processing
 
 
 @dataclass
@@ -174,8 +174,74 @@ class SleepProcessor:
         self.min_quality_score = 0.5
         self.include_metadata = True
         
+        # Track last sleep for incremental processing
+        self._last_sleep_timestamp = self._get_last_sleep_timestamp()
+        
         if self.model_override:
             self._log(f"🎯 Using LoRA adapter: {self.model_override}")
+    
+    def _get_last_sleep_timestamp(self) -> Optional[str]:
+        """Get timestamp of last sleep from learning_book.json."""
+        learning_book_path = self.actor_dir / 'learning_book.json'
+        if learning_book_path.exists():
+            try:
+                with open(learning_book_path, 'r') as f:
+                    book = json.load(f)
+                last_sleep = book.get('last_sleep', {})
+                return last_sleep.get('timestamp')
+            except Exception:
+                pass
+        return None
+    
+    def _get_items_since_last_sleep(self, category_name: str, items: List[str], file_path: Path) -> List[str]:
+        """
+        Get only items added since last sleep.
+        
+        Uses _meta.last_updated from YAML files and compares to last sleep timestamp.
+        Falls back to returning all items if we can't determine what's new.
+        """
+        if not self._last_sleep_timestamp:
+            # First sleep ever - return all items
+            return items
+        
+        # Check if file has _meta with last_updated
+        try:
+            with open(file_path, 'r') as f:
+                data = yaml.safe_load(f) or {}
+            
+            meta = data.get('_meta', {})
+            consolidation_info = meta.get('consolidation_info', {})
+            last_condensed_timestamp = consolidation_info.get('timestamp')
+            
+            if last_condensed_timestamp:
+                # Items were condensed at this timestamp
+                # Check last_updated to see if new items were added after
+                last_updated = meta.get('last_updated', '')
+                
+                if last_updated and last_updated > self._last_sleep_timestamp:
+                    # File was modified after last sleep - new items were likely added
+                    # We can't perfectly identify which are new, so count based on previous
+                    original_count = consolidation_info.get('original_count', 0)
+                    condensed_count = consolidation_info.get('condensed_count', len(items))
+                    
+                    # New items = current count - condensed count from last time
+                    new_count = len(items) - condensed_count
+                    if new_count > 0:
+                        self._log(f"      📌 {new_count} new items since last sleep")
+                        # Return only the newest items (assumed to be at the end)
+                        return items[-new_count:]
+                    else:
+                        self._log(f"      ⊘ No new items since last sleep")
+                        return []
+                else:
+                    # File hasn't been modified since last sleep
+                    self._log(f"      ⊘ No changes since last sleep")
+                    return []
+        except Exception as e:
+            self._log(f"      ⚠ Could not check for new items: {e}")
+        
+        # Fallback: return all items
+        return items
         
     def _log(self, message: str):
         """Print message if verbose."""
@@ -207,18 +273,30 @@ class SleepProcessor:
             else:
                 raise
     
-    def sleep(self, output_path: Optional[str] = None) -> Dict[str, Any]:
+    def sleep(self, output_path: Optional[str] = None, deep: bool = False) -> Dict[str, Any]:
         """
         Main entry point - run the complete sleep cycle.
         
         Like biological sleep, this consolidates memories and prepares
         for "waking up" with improved capabilities.
         
+        Args:
+            output_path: Optional path for the training dataset
+            deep: If True, condense ALL items. If False (default), only condense NEW items since last sleep.
+        
         Returns:
             Summary of the sleep cycle results
         """
-        self._log(f"\n🌙 {self.actor_name} is going to sleep...")
+        mode = "deep" if deep else "light"
+        self._log(f"\n🌙 {self.actor_name} is going to {mode} sleep...")
         self._log("=" * 60)
+        
+        if deep:
+            self._log("   🔮 Deep sleep mode: Will condense ALL knowledge items")
+        else:
+            self._log("   💤 Light sleep mode: Will only condense NEW items since last sleep")
+            if self._last_sleep_timestamp:
+                self._log(f"   📅 Last sleep: {self._last_sleep_timestamp}")
         
         # Phase 1: Gather and consolidate memories
         self._log("\n💭 Phase 1: Consolidating memories...")
@@ -238,11 +316,15 @@ class SleepProcessor:
         
         # Phase 5: Export dataset with timestamp
         self._log("\n💾 Phase 5: Exporting dataset...")
-        export_path = self.export_dataset(output_path)  # Will auto-generate timestamped name if None
+        export_path = self.export_dataset(output_path)
         
         # Phase 6: Consolidate and condense knowledge
-        self._log("\n🗜️ Phase 6: Consolidating and condensing knowledge...")
-        self._consolidate_and_archive()
+        if deep:
+            self._log("\n🗜️ Phase 6: DEEP condensation - processing ALL knowledge...")
+            self._consolidate_and_archive(incremental=False)
+        else:
+            self._log("\n🗜️ Phase 6: Light condensation - processing only NEW items...")
+            self._consolidate_and_archive(incremental=True)
         
         # Summary
         summary = self._generate_summary()
@@ -255,11 +337,30 @@ class SleepProcessor:
         self._log_sleep_event(summary)
         
         return summary
+    
+    def deep_sleep(self, output_path: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Deep sleep - condenses ALL knowledge items, not just new ones.
+        
+        Use this periodically (e.g., weekly) to fully consolidate and compress
+        the actor's accumulated knowledge. This is more expensive but ensures
+        the knowledge base doesn't grow unbounded.
+        
+        Returns:
+            Summary of the deep sleep cycle results
+        """
+        return self.sleep(output_path=output_path, deep=True)
 
-    def _consolidate_and_archive(self):
+    def _consolidate_and_archive(self, incremental: bool = False):
         """
         Consolidate and condense principles, experiences, challenges, and knowledge.
         Archive the originals and update with condensed versions.
+        
+        Args:
+            incremental: If True, only condense items added since last sleep.
+                        If False (default), condense all items.
+        
+        Categories are processed IN PARALLEL for faster execution.
         """
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         archive_base = self.actor_dir / 'archive'
@@ -277,118 +378,193 @@ class SleepProcessor:
         # Get usage statistics to inform condensation decisions
         usage_stats = self.kb.get_usage_stats()
         
+        # Filter categories that need processing
+        categories_to_process = []
         for category_name, items, file_path in categories:
-            if not items or len(items) < 3:  # Skip if too few items
-                self._log(f"   ⊘ Skipping {category_name} (only {len(items)} items)")
+            if not items:
+                self._log(f"   ⊘ Skipping {category_name} (no items)")
                 continue
             
-            # Get usage info for this category
-            category_usage = usage_stats.get(category_name, {'access_count': 0, 'items': {}})
-            frequently_used = self._identify_frequently_used_items(category_name, items, category_usage)
+            # In incremental mode, only process items added since last sleep
+            if incremental:
+                new_items = self._get_items_since_last_sleep(category_name, items, file_path)
+                if not new_items or len(new_items) < 3:
+                    self._log(f"   ⊘ Skipping {category_name} (only {len(new_items) if new_items else 0} new items)")
+                    continue
+                # Use new items for condensation
+                categories_to_process.append((category_name, new_items, file_path, True))
+            else:
+                # Deep mode: process all items
+                if len(items) < 3:
+                    self._log(f"   ⊘ Skipping {category_name} (only {len(items)} items)")
+                    continue
+                categories_to_process.append((category_name, items, file_path, False))
+        
+        if not categories_to_process:
+            self._log("   ⊘ No categories need consolidation")
+            return
+        
+        self._log(f"   🚀 Processing {len(categories_to_process)} categories in parallel...")
+        
+        # Process categories in parallel
+        max_workers = min(len(categories_to_process), self._get_max_concurrent_requests())
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {}
+            for category_name, items, file_path, is_incremental in categories_to_process:
+                category_usage = usage_stats.get(category_name, {'access_count': 0, 'items': {}})
+                frequently_used = self._identify_frequently_used_items(category_name, items, category_usage)
+                
+                future = executor.submit(
+                    self._process_single_category,
+                    category_name, items, file_path, archive_base, timestamp, frequently_used, is_incremental
+                )
+                futures[future] = category_name
             
-            self._log(f"   🔄 Consolidating {len(items)} {category_name}...")
-            if frequently_used:
-                self._log(f"      📌 {len(frequently_used)} frequently-used items will be preserved")
+            # Collect results
+            for future in as_completed(futures):
+                category_name = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    self._log(f"   ⚠ Error processing {category_name}: {e}")
+    
+    def _process_single_category(self, category_name: str, items: List[str], file_path: Path, 
+                                  archive_base: Path, timestamp: str, frequently_used: List[int],
+                                  is_incremental: bool = False):
+        """Process a single category for consolidation. Called in parallel.
+        
+        Args:
+            is_incremental: If True, items are NEW items only - append condensed to existing.
+                           If False, items are ALL items - replace existing with condensed.
+        """
+        mode_str = "NEW" if is_incremental else "ALL"
+        self._log(f"   🔄 Condensing {len(items)} {mode_str} {category_name}...")
+        if frequently_used:
+            self._log(f"      📌 {len(frequently_used)} frequently-used items will be preserved")
+        
+        # Archive original items
+        archive_dir = archive_base / category_name
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archive_file = archive_dir / f"{category_name}_{timestamp}.yaml"
+        
+        # Save original to archive
+        archive_data = {
+            category_name: items,
+            '_meta': {
+                'archived_at': datetime.now().isoformat(),
+                'archived_by': 'sleep_processor',
+                'reason': 'Memory consolidation during sleep',
+                'original_count': len(items)
+            }
+        }
+        
+        try:
+            with open(archive_file, 'w') as f:
+                yaml.dump(archive_data, f, default_flow_style=False, allow_unicode=True)
+            self._log(f"      ✓ Archived {len(items)} items to {archive_file.name}")
+        except Exception as e:
+            self._log(f"      ⚠ Could not archive {category_name}: {e}")
+            return
+        
+        # Condense using LLM with usage awareness
+        condensed_items = self._condense_items(category_name, items, frequently_used)
+        
+        if condensed_items:
+            # Extract source mappings from [Items X,Y,Z] references before stripping
+            source_mappings = []
+            cleaned_items = []
+            for idx, item in enumerate(condensed_items):
+                ref_match = re.match(r'^\[Items?\s*([\d,\s]+)\]', item)
+                if ref_match:
+                    ref_nums = [int(n.strip()) for n in ref_match.group(1).split(',') if n.strip().isdigit()]
+                    source_items = [items[n-1] for n in ref_nums if 0 < n <= len(items)]
+                    source_mappings.append({
+                        'condensed_index': idx,
+                        'source_indices': [n-1 for n in ref_nums if 0 < n <= len(items)],
+                        'source_items': source_items
+                    })
+                cleaned_item = re.sub(r'^\[Items?\s*[\d,\s]+\]\s*', '', item)
+                cleaned_items.append(cleaned_item)
+            condensed_items = cleaned_items
             
-            # Archive original items
-            archive_dir = archive_base / category_name
-            archive_dir.mkdir(parents=True, exist_ok=True)
-            archive_file = archive_dir / f"{category_name}_{timestamp}.yaml"
+            actually_condensed = len(condensed_items) < len(items)
             
-            # Save original to archive
-            archive_data = {
-                category_name: items,
+            # Save source mappings
+            if source_mappings:
+                mappings_file = archive_dir / f"{category_name}_{timestamp}_mappings.json"
+                mappings_data = {
+                    'category': category_name,
+                    'timestamp': timestamp,
+                    'archive_file': str(archive_file),
+                    'original_count': len(items),
+                    'condensed_count': len(condensed_items),
+                    'mappings': source_mappings
+                }
+                try:
+                    with open(mappings_file, 'w') as f:
+                        json.dump(mappings_data, f, indent=2)
+                    self._log(f"      ✓ Saved source mappings to {mappings_file.name}")
+                except Exception as e:
+                    self._log(f"      ⚠ Could not save mappings: {e}")
+            
+            # Update the main file with condensed items
+            # In incremental mode: load existing, remove old new items, add condensed
+            # In deep mode: replace everything with condensed
+            
+            if is_incremental:
+                # Load existing items from file
+                try:
+                    with open(file_path, 'r') as f:
+                        existing_data = yaml.safe_load(f) or {}
+                    existing_items = existing_data.get(category_name, [])
+                except Exception:
+                    existing_items = []
+                
+                # Remove the items we just condensed (they were at the end)
+                # and append the condensed versions
+                num_new_items = len(items)
+                if len(existing_items) >= num_new_items:
+                    # Keep existing items minus the new ones we condensed
+                    final_items = existing_items[:-num_new_items] + condensed_items
+                else:
+                    # Something is off, just use condensed items
+                    final_items = condensed_items
+                
+                self._log(f"      📝 Incremental: {len(existing_items)} existing - {num_new_items} condensed from {len(items)} new = {len(final_items)} total")
+            else:
+                # Deep mode: replace all with condensed
+                final_items = condensed_items
+            
+            new_data = {
+                category_name: final_items,
                 '_meta': {
-                    'archived_at': datetime.now().isoformat(),
-                    'archived_by': 'sleep_processor',
-                    'reason': 'Memory consolidation during sleep',
-                    'original_count': len(items)
+                    'last_updated': datetime.now().isoformat(),
+                    'updated_by': 'sleep_processor',
+                    'consolidation_info': {
+                        'mode': 'incremental' if is_incremental else 'deep',
+                        'original_count': len(items),
+                        'condensed_count': len(condensed_items),
+                        'final_count': len(final_items) if is_incremental else len(condensed_items),
+                        'reduction_achieved': actually_condensed,
+                        'archived_to': str(archive_file),
+                        'mappings_file': str(mappings_file) if source_mappings else None,
+                        'timestamp': timestamp
+                    }
                 }
             }
             
             try:
-                with open(archive_file, 'w') as f:
-                    yaml.dump(archive_data, f, default_flow_style=False, allow_unicode=True)
-                self._log(f"      ✓ Archived {len(items)} items to {archive_file.name}")
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w') as f:
+                    yaml.dump(new_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                if actually_condensed:
+                    reduction_pct = int((1 - len(condensed_items)/len(items)) * 100)
+                    self._log(f"      ✓ Condensed {len(items)} → {len(condensed_items)} items ({reduction_pct}% reduction)")
+                else:
+                    self._log(f"      ⚠ No condensation achieved, kept {len(items)} original items")
             except Exception as e:
-                self._log(f"      ⚠ Could not archive {category_name}: {e}")
-                continue
-            
-            # Condense using LLM with usage awareness
-            condensed_items = self._condense_items(category_name, items, frequently_used)
-            
-            if condensed_items:
-                # Extract source mappings from [Items X,Y,Z] references before stripping
-                # This creates a traceable link back to archived originals
-                source_mappings = []
-                cleaned_items = []
-                for idx, item in enumerate(condensed_items):
-                    # Extract item references like [Items 1, 3, 7] or [Item 5]
-                    ref_match = re.match(r'^\[Items?\s*([\d,\s]+)\]', item)
-                    if ref_match:
-                        # Parse the item numbers (1-indexed in prompts)
-                        ref_nums = [int(n.strip()) for n in ref_match.group(1).split(',') if n.strip().isdigit()]
-                        # Convert to 0-indexed and get original items
-                        source_items = [items[n-1] for n in ref_nums if 0 < n <= len(items)]
-                        source_mappings.append({
-                            'condensed_index': idx,
-                            'source_indices': [n-1 for n in ref_nums if 0 < n <= len(items)],
-                            'source_items': source_items
-                        })
-                    # Strip the reference prefix for clean storage
-                    cleaned_item = re.sub(r'^\[Items?\s*[\d,\s]+\]\s*', '', item)
-                    cleaned_items.append(cleaned_item)
-                condensed_items = cleaned_items
-                
-                # Check if we actually achieved condensation
-                actually_condensed = len(condensed_items) < len(items)
-                
-                # Save source mappings to a separate file for traceability
-                if source_mappings:
-                    mappings_file = archive_dir / f"{category_name}_{timestamp}_mappings.json"
-                    mappings_data = {
-                        'category': category_name,
-                        'timestamp': timestamp,
-                        'archive_file': str(archive_file),
-                        'original_count': len(items),
-                        'condensed_count': len(condensed_items),
-                        'mappings': source_mappings
-                    }
-                    try:
-                        with open(mappings_file, 'w') as f:
-                            json.dump(mappings_data, f, indent=2)
-                        self._log(f"      ✓ Saved source mappings to {mappings_file.name}")
-                    except Exception as e:
-                        self._log(f"      ⚠ Could not save mappings: {e}")
-                
-                # Update the main file with condensed items
-                new_data = {
-                    category_name: condensed_items,
-                    '_meta': {
-                        'last_updated': datetime.now().isoformat(),
-                        'updated_by': 'sleep_processor',
-                        'consolidation_info': {
-                            'original_count': len(items),
-                            'condensed_count': len(condensed_items),
-                            'reduction_achieved': actually_condensed,
-                            'archived_to': str(archive_file),
-                            'mappings_file': str(mappings_file) if source_mappings else None,
-                            'timestamp': timestamp
-                        }
-                    }
-                }
-                
-                try:
-                    file_path.parent.mkdir(parents=True, exist_ok=True)
-                    with open(file_path, 'w') as f:
-                        yaml.dump(new_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-                    if actually_condensed:
-                        reduction_pct = int((1 - len(condensed_items)/len(items)) * 100)
-                        self._log(f"      ✓ Condensed {len(items)} → {len(condensed_items)} items ({reduction_pct}% reduction)")
-                    else:
-                        self._log(f"      ⚠ No condensation achieved, kept {len(items)} original items")
-                except Exception as e:
-                    self._log(f"      ⚠ Could not update {category_name}: {e}")
+                self._log(f"      ⚠ Could not update {category_name}: {e}")
     
     def _identify_frequently_used_items(self, category_name: str, items: List[str], usage: dict) -> List[int]:
         """Identify items that are frequently accessed and should be kept separate."""

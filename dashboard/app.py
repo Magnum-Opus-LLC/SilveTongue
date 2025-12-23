@@ -1153,26 +1153,36 @@ def api_actor_sleep(actor_name):
     This processes all of the actor's accumulated knowledge, experiences,
     and learning sessions into training data that can be used to fine-tune
     a model to embody the actor's unique mind.
+    
+    Request body:
+        deep: bool - If True, condense ALL items (deep sleep). 
+                     If False (default), only condense NEW items since last sleep.
+        adapter: str - LoRA adapter to use for LLM calls (empty = base model)
     """
     try:
         from src.actions.sleep_processor import SleepProcessor
         
         data = request.json or {}
-        include_dreams = data.get('include_dreams', True)
-        output_format = data.get('format', 'alpaca')  # alpaca, sharegpt, or full
-        adapter = data.get('adapter', '')  # LoRA adapter to use for LLM calls (empty = base model)
+        deep_sleep = data.get('deep', False)  # Default to light sleep (incremental)
+        adapter = data.get('adapter', '')  # LoRA adapter to use for LLM calls
         
         # Use verbose=True so we can see consolidation logs
         processor = SleepProcessor(actor_name, verbose=True, model_override=adapter if adapter else None)
         
-        # Run complete sleep cycle (includes dreams by default)
-        result = processor.sleep()
+        # Run sleep cycle - deep or light based on parameter
+        if deep_sleep:
+            result = processor.deep_sleep()
+            mode = "deep"
+        else:
+            result = processor.sleep()
+            mode = "light"
         
         return jsonify({
             'success': True,
             'actor': actor_name,
+            'mode': mode,
             'summary': result,
-            'message': f'Sleep cycle complete! Generated {result["total_examples"]} training examples.'
+            'message': f'{mode.capitalize()} sleep complete! Generated {result["total_examples"]} training examples.'
         })
         
     except Exception as e:

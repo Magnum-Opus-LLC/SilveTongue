@@ -1215,15 +1215,42 @@
                                             Put [[ selectedActor ]] to sleep to consolidate memories into LoRA training data
                                         </p>
                                     </div>
-                                    <button 
-                                        @click="initiateSleep"
-                                        :disabled="sleepLoading"
-                                        class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                                    >
-                                        <span v-if="sleepLoading" class="animate-spin">⏳</span>
-                                        <span v-else>🌙</span>
-                                        <span>[[ sleepLoading ? 'Sleeping...' : 'Put to Sleep' ]]</span>
-                                    </button>
+                                    <div class="flex items-center space-x-3">
+                                        <!-- Light Sleep Button (default) -->
+                                        <button 
+                                            @click="initiateSleep(false)"
+                                            :disabled="sleepLoading"
+                                            class="px-5 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                                            title="Light Sleep: Only condense NEW items since last sleep"
+                                        >
+                                            <span v-if="sleepLoading && !sleepDeepMode" class="animate-spin">⏳</span>
+                                            <span v-else>💤</span>
+                                            <span>[[ sleepLoading && !sleepDeepMode ? 'Sleeping...' : 'Light Sleep' ]]</span>
+                                        </button>
+                                        <!-- Deep Sleep Button -->
+                                        <button 
+                                            @click="initiateSleep(true)"
+                                            :disabled="sleepLoading"
+                                            class="px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                                            title="Deep Sleep: Condense ALL items (more thorough but slower)"
+                                        >
+                                            <span v-if="sleepLoading && sleepDeepMode" class="animate-spin">⏳</span>
+                                            <span v-else>🌙</span>
+                                            <span>[[ sleepLoading && sleepDeepMode ? 'Deep Sleeping...' : 'Deep Sleep' ]]</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Sleep Mode Info -->
+                                <div class="grid grid-cols-2 gap-4 mb-4">
+                                    <div class="bg-purple-900/20 border border-purple-600/30 rounded-lg p-3">
+                                        <h5 class="text-sm font-semibold text-purple-400 flex items-center">💤 Light Sleep</h5>
+                                        <p class="text-xs text-gray-400 mt-1">Only condenses NEW items added since last sleep. Fast and efficient for daily use.</p>
+                                    </div>
+                                    <div class="bg-indigo-900/20 border border-indigo-600/30 rounded-lg p-3">
+                                        <h5 class="text-sm font-semibold text-indigo-400 flex items-center">🌙 Deep Sleep</h5>
+                                        <p class="text-xs text-gray-400 mt-1">Condenses ALL items. Use weekly to fully consolidate and compress knowledge.</p>
+                                    </div>
                                 </div>
 
                                 <!-- Sleep Options -->
@@ -2293,6 +2320,7 @@
                     
                     // Sleep / LoRA Training
                     sleepLoading: false,
+                    sleepDeepMode: false,  // Track which sleep mode is running
                     sleepStatusLoading: false,
                     sleepStatus: { has_data: false, datasets: [] },
                     sleepOptions: {
@@ -2890,10 +2918,11 @@
                     this.sleepStatusLoading = false;
                 },
                 
-                async initiateSleep() {
+                async initiateSleep(deep = false) {
                     if (!this.selectedActor || this.sleepLoading) return;
                     
                     this.sleepLoading = true;
+                    this.sleepDeepMode = deep;
                     this.lastSleepResult = null;
                     
                     try {
@@ -2903,7 +2932,8 @@
                             body: JSON.stringify({
                                 include_dreams: this.sleepOptions.includeDreams,
                                 format: this.sleepOptions.format,
-                                adapter: this.sleepOptions.adapter  // LoRA adapter to use
+                                adapter: this.sleepOptions.adapter,  // LoRA adapter to use
+                                deep: deep  // true for deep sleep (all items), false for light sleep (new items only)
                             })
                         });
                         
