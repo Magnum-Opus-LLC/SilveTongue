@@ -1478,12 +1478,11 @@
                                             <label class="block text-xs text-gray-400 mb-1">📊 Training Dataset</label>
                                             <select v-model="trainingConfig.dataset" 
                                                     class="w-full bg-gray-700 border-gray-600 rounded-lg px-3 py-2 text-sm">
-                                                <option value="">Latest Dataset</option>
                                                 <option v-for="dataset in sleepStatus.datasets" :key="dataset.filename" :value="dataset.filename">
                                                     [[ dataset.filename ]] ([[ dataset.examples ]] examples)
                                                 </option>
                                             </select>
-                                            <p class="text-xs text-gray-500 mt-1">Dataset generated from Sleep tab</p>
+                                            <p class="text-xs text-gray-500 mt-1">Dataset generated from Sleep tab (sorted newest first)</p>
                                         </div>
                                     </div>
                                     
@@ -2879,6 +2878,11 @@
                     try {
                         const res = await fetch(`/api/actor/${this.selectedActor}/sleep/status`);
                         this.sleepStatus = await res.json();
+                        
+                        // Auto-select the latest dataset (first in sorted list) if none selected
+                        if (!this.trainingConfig.dataset && this.sleepStatus.datasets && this.sleepStatus.datasets.length > 0) {
+                            this.trainingConfig.dataset = this.sleepStatus.datasets[0].filename;
+                        }
                     } catch (e) {
                         console.error('Failed to load sleep status:', e);
                         this.sleepStatus = { has_data: false, datasets: [] };

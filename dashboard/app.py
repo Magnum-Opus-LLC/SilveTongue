@@ -1224,6 +1224,12 @@ def api_actor_sleep_status(actor_name):
                 'recommended_params': summary.get('recommended_training_params', {})
             })
         
+        # Sort datasets by generated_at (newest first), fallback to filename
+        result['datasets'].sort(
+            key=lambda d: d.get('generated_at', ''),
+            reverse=True
+        )
+        
         return jsonify(result)
         
     except Exception as e:
