@@ -301,11 +301,129 @@
 
             <!-- Main Content -->
             <main class="flex-1 overflow-y-auto">
-                <!-- No actor selected -->
-                <div v-if="!selectedActor" class="flex items-center justify-center h-full">
-                    <div class="text-center text-gray-500">
-                        <div class="text-6xl mb-4">🎭</div>
-                        <p class="text-xl">Select an actor to get started</p>
+                <!-- No actor selected - Show Global PDF Library -->
+                <div v-if="!selectedActor" class="p-6">
+                    <div class="mb-6">
+                        <h2 class="text-3xl font-bold text-white mb-2">📚 PDF Library</h2>
+                        <p class="text-gray-400">Browse all [[ pdfLibraryStats.total_pdfs || 0 ]] cached research papers</p>
+                    </div>
+                    
+                    <!-- Library Stats and Controls -->
+                    <div class="bg-gray-800 rounded-xl p-4 mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center space-x-4">
+                                <div class="relative flex-1" style="min-width: 400px;">
+                                    <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔍</span>
+                                    <input 
+                                        v-model="pdfLibrarySearch"
+                                        type="text"
+                                        placeholder="Search PDF library by title..."
+                                        class="w-full bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-4 py-2 focus:outline-none focus:border-purple-500"
+                                    >
+                                </div>
+                                <button 
+                                    @click="loadPdfLibrary"
+                                    :disabled="pdfLibraryLoading"
+                                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center space-x-2"
+                                    title="Refresh PDF list"
+                                >
+                                    <span :class="{'animate-spin': pdfLibraryLoading}">🔄</span>
+                                    <span>Refresh</span>
+                                </button>
+                                <button 
+                                    @click="rebuildPdfStock"
+                                    :disabled="pdfLibraryLoading"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
+                                    title="Rebuild PDF stock index"
+                                >
+                                    <span>🔧</span>
+                                    <span>Rebuild Index</span>
+                                </button>
+                            </div>
+                            <div class="text-sm text-gray-400">
+                                [[ filteredPdfLibrary.length ]] / [[ pdfLibrary.length ]] PDFs
+                            </div>
+                        </div>
+                        
+                        <!-- Library Stats -->
+                        <div class="grid grid-cols-4 gap-4">
+                            <div class="bg-gray-700 rounded-lg p-3 text-center">
+                                <div class="text-2xl font-bold text-blue-400">[[ pdfLibraryStats.total_pdfs || 0 ]]</div>
+                                <div class="text-xs text-gray-400">Total PDFs</div>
+                            </div>
+                            <div class="bg-gray-700 rounded-lg p-3 text-center">
+                                <div class="text-2xl font-bold text-green-400">[[ pdfLibraryStats.indexed_titles || 0 ]]</div>
+                                <div class="text-xs text-gray-400">Unique Titles</div>
+                            </div>
+                            <div class="bg-gray-700 rounded-lg p-3 text-center">
+                                <div class="text-2xl font-bold text-yellow-400">[[ pdfLibraryStats.total_size_mb ? (pdfLibraryStats.total_size_mb / 1024).toFixed(2) : 0 ]] GB</div>
+                                <div class="text-xs text-gray-400">Total Size</div>
+                            </div>
+                            <div class="bg-gray-700 rounded-lg p-3 text-center">
+                                <div class="text-2xl font-bold text-purple-400">[[ pdfLibraryStats.updated_at ? formatDate(pdfLibraryStats.updated_at) : 'Never' ]]</div>
+                                <div class="text-xs text-gray-400">Last Updated</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PDF List -->
+                    <div v-if="pdfLibraryLoading" class="bg-gray-800 rounded-xl p-8 text-center">
+                        <div class="animate-spin text-4xl mb-2">📁</div>
+                        <p class="text-gray-400">Loading PDF library...</p>
+                    </div>
+
+                    <div v-else-if="pdfLibrary.length === 0" class="bg-gray-800 rounded-xl p-8 text-center">
+                        <div class="text-4xl mb-2">📁</div>
+                        <p class="text-gray-400">No PDFs in library</p>
+                        <p class="text-xs text-gray-500 mt-1">PDFs will be cached here when fetched during learning sessions</p>
+                    </div>
+
+                    <div v-else class="bg-gray-800 rounded-xl overflow-hidden">
+                        <table class="w-full">
+                            <thead class="bg-gray-700">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-sm font-medium text-gray-300">#</th>
+                                    <th class="px-4 py-3 text-left text-sm font-medium text-gray-300">Title</th>
+                                    <th class="px-4 py-3 text-right text-sm font-medium text-gray-300 w-24">Size</th>
+                                    <th class="px-4 py-3 text-center text-sm font-medium text-gray-300 w-32">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-700">
+                                <tr v-for="(pdf, index) in filteredPdfLibrary.slice(0, 100)" :key="pdf.filename" 
+                                    class="hover:bg-gray-700/50 transition-colors">
+                                    <td class="px-4 py-3 text-sm text-gray-500">
+                                        [[ index + 1 ]]
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <div class="font-medium text-white truncate" style="max-width: 700px;" :title="pdf.title">
+                                            [[ pdf.title || pdf.filename ]]
+                                        </div>
+                                        <div class="text-xs text-gray-500 truncate" style="max-width: 700px;">
+                                            [[ pdf.filename ]]
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 text-right text-sm text-gray-400">
+                                        [[ pdf.size_mb.toFixed(2) ]] MB
+                                    </td>
+                                    <td class="px-4 py-3 text-center">
+                                        <button 
+                                            @click="viewPdf(pdf.filename)"
+                                            class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 mr-2"
+                                            title="View PDF in browser"
+                                        >
+                                            👁️ View
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div v-if="filteredPdfLibrary.length > 100" class="px-4 py-3 text-center text-sm text-gray-400 bg-gray-700/50">
+                            Showing first 100 of [[ filteredPdfLibrary.length ]] PDFs. Use search to find specific papers.
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 text-center text-gray-500 text-sm">
+                        <p>💡 Select an actor from the sidebar to view their studied papers and extracted concepts</p>
                     </div>
                 </div>
 
@@ -1208,6 +1326,26 @@
 
                         <!-- Papers Tab - Review Studied Papers and Extracted Concepts -->
                         <div v-show="activeTab === 'papers'" class="space-y-6">
+                            <!-- Sub-tabs for Papers section -->
+                            <div class="flex space-x-2 border-b border-gray-700 pb-2">
+                                <button 
+                                    @click="papersSubTab = 'studied'"
+                                    :class="papersSubTab === 'studied' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                                    class="px-4 py-2 rounded-lg font-medium transition-colors"
+                                >
+                                    📚 Studied Papers
+                                </button>
+                                <button 
+                                    @click="papersSubTab = 'library'; loadPdfLibrary()"
+                                    :class="papersSubTab === 'library' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                                    class="px-4 py-2 rounded-lg font-medium transition-colors"
+                                >
+                                    📁 PDF Library ([[ pdfLibraryStats.total_pdfs || '...' ]])
+                                </button>
+                            </div>
+
+                            <!-- Studied Papers Sub-tab -->
+                            <div v-show="papersSubTab === 'studied'" class="space-y-6">
                             <!-- Search and Filter -->
                             <div class="bg-gray-800 rounded-xl p-4">
                                 <div class="flex items-center space-x-4">
@@ -1396,6 +1534,112 @@
                                     </div>
                                 </div>
                             </div>
+                            </div>
+                            <!-- End Studied Papers Sub-tab -->
+
+                            <!-- PDF Library Sub-tab -->
+                            <div v-show="papersSubTab === 'library'" class="space-y-6">
+                                <!-- Library Stats and Controls -->
+                                <div class="bg-gray-800 rounded-xl p-4">
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div class="flex items-center space-x-4">
+                                            <div class="relative flex-1" style="min-width: 300px;">
+                                                <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔍</span>
+                                                <input 
+                                                    v-model="pdfLibrarySearch"
+                                                    type="text"
+                                                    placeholder="Search PDF library by title..."
+                                                    class="w-full bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-4 py-2 focus:outline-none focus:border-purple-500"
+                                                >
+                                            </div>
+                                            <button 
+                                                @click="rebuildPdfStock"
+                                                :disabled="pdfLibraryLoading"
+                                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
+                                                title="Rebuild PDF stock index"
+                                            >
+                                                <span :class="{'animate-spin': pdfLibraryLoading}">🔄</span>
+                                                <span>Rebuild Index</span>
+                                            </button>
+                                        </div>
+                                        <div class="text-sm text-gray-400">
+                                            [[ filteredPdfLibrary.length ]] / [[ pdfLibrary.length ]] PDFs
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Library Stats -->
+                                    <div class="grid grid-cols-4 gap-4">
+                                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                                            <div class="text-2xl font-bold text-blue-400">[[ pdfLibraryStats.total_pdfs || 0 ]]</div>
+                                            <div class="text-xs text-gray-400">Total PDFs</div>
+                                        </div>
+                                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                                            <div class="text-2xl font-bold text-green-400">[[ pdfLibraryStats.indexed_titles || 0 ]]</div>
+                                            <div class="text-xs text-gray-400">Indexed Titles</div>
+                                        </div>
+                                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                                            <div class="text-2xl font-bold text-yellow-400">[[ pdfLibraryStats.total_size_mb ? pdfLibraryStats.total_size_mb.toFixed(1) : 0 ]] MB</div>
+                                            <div class="text-xs text-gray-400">Total Size</div>
+                                        </div>
+                                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                                            <div class="text-2xl font-bold text-purple-400">[[ pdfLibraryStats.updated_at ? formatDate(pdfLibraryStats.updated_at) : 'Never' ]]</div>
+                                            <div class="text-xs text-gray-400">Last Updated</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- PDF List -->
+                                <div v-if="pdfLibraryLoading" class="bg-gray-800 rounded-xl p-8 text-center">
+                                    <div class="animate-spin text-4xl mb-2">📁</div>
+                                    <p class="text-gray-400">Loading PDF library...</p>
+                                </div>
+
+                                <div v-else-if="pdfLibrary.length === 0" class="bg-gray-800 rounded-xl p-8 text-center">
+                                    <div class="text-4xl mb-2">📁</div>
+                                    <p class="text-gray-400">No PDFs in library</p>
+                                    <p class="text-xs text-gray-500 mt-1">PDFs will be cached here when fetched during learning sessions</p>
+                                </div>
+
+                                <div v-else class="bg-gray-800 rounded-xl overflow-hidden">
+                                    <table class="w-full">
+                                        <thead class="bg-gray-700">
+                                            <tr>
+                                                <th class="px-4 py-3 text-left text-sm font-medium text-gray-300">Title</th>
+                                                <th class="px-4 py-3 text-right text-sm font-medium text-gray-300 w-24">Size</th>
+                                                <th class="px-4 py-3 text-center text-sm font-medium text-gray-300 w-32">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-700">
+                                            <tr v-for="pdf in filteredPdfLibrary.slice(0, 100)" :key="pdf.filename" 
+                                                class="hover:bg-gray-700/50 transition-colors">
+                                                <td class="px-4 py-3">
+                                                    <div class="font-medium text-white truncate" style="max-width: 600px;" :title="pdf.title">
+                                                        [[ pdf.title ]]
+                                                    </div>
+                                                    <div class="text-xs text-gray-500 truncate" style="max-width: 600px;">
+                                                        [[ pdf.filename ]]
+                                                    </div>
+                                                </td>
+                                                <td class="px-4 py-3 text-right text-sm text-gray-400">
+                                                    [[ pdf.size_mb.toFixed(2) ]] MB
+                                                </td>
+                                                <td class="px-4 py-3 text-center">
+                                                    <button 
+                                                        @click="viewPdf(pdf.filename)"
+                                                        class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 mr-2"
+                                                    >
+                                                        👁️ View
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <div v-if="filteredPdfLibrary.length > 100" class="px-4 py-3 text-center text-sm text-gray-400 bg-gray-700/50">
+                                        Showing first 100 of [[ filteredPdfLibrary.length ]] PDFs. Use search to find specific papers.
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- End PDF Library Sub-tab -->
                         </div>
 
                         <!-- Sleep Tab - LoRA Training Data Generation -->
@@ -2507,6 +2751,13 @@
                     selectedPaper: null,
                     paperTopics: [],  // Unique topics from papers
                     
+                    // PDF Library
+                    papersSubTab: 'studied',  // 'studied' or 'library'
+                    pdfLibrary: [],
+                    pdfLibraryStats: {},
+                    pdfLibrarySearch: '',
+                    pdfLibraryLoading: false,
+                    
                     // Create Actor
                     showCreateActor: false,
                     createActorMode: 'ai',
@@ -2629,6 +2880,16 @@
                 },
                 cachedPdfsCount() {
                     return this.studiedPapers.filter(p => p.pdf_cached).length;
+                },
+                filteredPdfLibrary() {
+                    if (!this.pdfLibrarySearch.trim()) {
+                        return this.pdfLibrary;
+                    }
+                    const search = this.pdfLibrarySearch.toLowerCase().trim();
+                    return this.pdfLibrary.filter(pdf => 
+                        pdf.title.toLowerCase().includes(search) ||
+                        pdf.filename.toLowerCase().includes(search)
+                    );
                 },
                 filteredKnowledgeCount() {
                     return this.filteredValues.length + 
@@ -3169,17 +3430,61 @@
                 
                 viewPdf(filename) {
                     // Open PDF in new tab
-                    window.open(`/api/pdf/${encodeURIComponent(filename)}`, '_blank');
+                    window.open(`/api/pdf/file/${encodeURIComponent(filename)}`, '_blank');
                 },
                 
                 async downloadPdf(filename) {
                     // Download PDF
                     const link = document.createElement('a');
-                    link.href = `/api/pdf/${encodeURIComponent(filename)}`;
+                    link.href = `/api/pdf/file/${encodeURIComponent(filename)}`;
                     link.download = filename;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
+                },
+                
+                async loadPdfLibrary() {
+                    this.pdfLibraryLoading = true;
+                    try {
+                        // Load both the stock list and stats
+                        const [listRes, statsRes] = await Promise.all([
+                            fetch('/api/pdf-cache/list'),
+                            fetch('/api/pdf-cache/stats')
+                        ]);
+                        
+                        if (listRes.ok) {
+                            const listData = await listRes.json();
+                            this.pdfLibrary = listData.pdfs || [];
+                        }
+                        
+                        if (statsRes.ok) {
+                            this.pdfLibraryStats = await statsRes.json();
+                        }
+                    } catch (e) {
+                        console.error('Failed to load PDF library:', e);
+                        this.pdfLibrary = [];
+                    }
+                    this.pdfLibraryLoading = false;
+                },
+                
+                async rebuildPdfStock() {
+                    if (!confirm('Rebuild the PDF stock index? This will scan all PDFs in the cache.')) return;
+                    
+                    this.pdfLibraryLoading = true;
+                    try {
+                        const res = await fetch('/api/pdf-cache/rebuild', { method: 'POST' });
+                        if (res.ok) {
+                            const data = await res.json();
+                            alert(`Rebuilt PDF stock: ${data.total_pdfs} PDFs indexed`);
+                            await this.loadPdfLibrary();
+                        } else {
+                            alert('Failed to rebuild PDF stock');
+                        }
+                    } catch (e) {
+                        console.error('Failed to rebuild PDF stock:', e);
+                        alert('Error rebuilding PDF stock');
+                    }
+                    this.pdfLibraryLoading = false;
                 },
                 
                 // Sleep / LoRA Training Methods
@@ -3898,6 +4203,9 @@
                     apiHost: this.config.apiHost || '',
                     model: this.config.model || ''
                 };
+                
+                // Load PDF library for global view
+                this.loadPdfLibrary();
             }
         }).mount('#app');
     </script>

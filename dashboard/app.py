@@ -73,6 +73,24 @@ def get_pdf_cache_dir():
     return array_dir / 'data' / 'pdf_cache'
 
 
+def get_pdf_stock_path():
+    """Get the path to the PDF stock index file."""
+    return get_pdf_cache_dir() / 'pdf_stock.json'
+
+
+def normalize_title(title: str) -> str:
+    """Normalize a title for matching - lowercase, remove punctuation, collapse spaces."""
+    if not title:
+        return ''
+    # Lowercase
+    normalized = title.lower()
+    # Remove punctuation except hyphens
+    normalized = re.sub(r'[^\w\s-]', '', normalized)
+    # Collapse multiple spaces/underscores to single space
+    normalized = re.sub(r'[\s_]+', ' ', normalized).strip()
+    return normalized
+
+
 def sanitize_title_for_filename(title: str) -> str:
     """Sanitize a paper title to match PDF cache naming convention."""
     # Remove special characters and normalize spaces
@@ -80,6 +98,111 @@ def sanitize_title_for_filename(title: str) -> str:
     sanitized = re.sub(r'\s+', '_', sanitized.strip())
     # Limit length
     return sanitized[:100]
+
+
+def load_pdf_stock() -> dict:
+    """Load the PDF stock index from disk."""
+    stock_path = get_pdf_stock_path()
+    if stock_path.exists():
+        try:
+            with open(stock_path, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {'pdfs': {}, 'title_index': {}, 'updated_at': None}
+
+
+def save_pdf_stock(stock: dict):
+    """Save the PDF stock index to disk."""
+    import datetime
+    stock_path = get_pdf_stock_path()
+    stock['updated_at'] = datetime.datetime.now().isoformat()
+    with open(stock_path, 'w') as f:
+        json.dump(stock, f, indent=2)
+
+
+def rebuild_pdf_stock() -> dict:
+    """Rebuild the PDF stock index by scanning the cache directory."""
+    import datetime
+    pdf_cache_dir = get_pdf_cache_dir()
+    
+    stock = {
+        'pdfs': {},           # filename -> {path, size_mb, original_title, normalized_title, added_at}
+        'title_index': {},    # normalized_title -> filename (for quick lookup)
+        'updated_at': datetime.datetime.now().isoformat(),
+        'total_count': 0,
+        'total_size_mb': 0
+    }
+    
+    if not pdf_cache_dir.exists():
+        return stock
+    
+    total_size = 0
+    for pdf_file in pdf_cache_dir.glob('*.pdf'):
+        filename = pdf_file.name
+        stem = pdf_file.stem
+        
+        # Extract title from filename (format: hash_title.pdf)
+        if '_' in stem:
+            title_part = stem.split('_', 1)[1]
+        else:
+            title_part = stem
+        
+        # Convert underscores back to spaces for the original title
+        original_title = title_part.replace('_', ' ')
+        normalized = normalize_title(original_title)
+        
+        try:
+            size_mb = round(pdf_file.stat().st_size / (1024 * 1024), 2)
+        except:
+            size_mb = 0
+        
+        total_size += size_mb
+        
+        stock['pdfs'][filename] = {
+            'path': str(pdf_file),
+            'size_mb': size_mb,
+            'original_title': original_title,
+            'normalized_title': normalized,
+            'references': []  # Papers that matched this PDF
+        }
+        
+        # Index by normalized title for quick lookup
+        if normalized:
+            stock['title_index'][normalized] = filename
+    
+    stock['total_count'] = len(stock['pdfs'])
+    stock['total_size_mb'] = round(total_size, 2)
+    
+    # Save to disk
+    save_pdf_stock(stock)
+    print(f"[PDF Stock] Rebuilt index: {stock['total_count']} PDFs, {stock['total_size_mb']} MB total")
+    
+    return stock
+
+
+# In-memory cache for PDF stock
+_pdf_stock_cache = {'stock': None, 'loaded_at': 0}
+
+def get_pdf_stock(force_rebuild=False) -> dict:
+    """Get the PDF stock, loading from disk or rebuilding if needed."""
+    import time
+    now = time.time()
+    
+    # Check if we need to reload (every 5 minutes or if forced)
+    if force_rebuild or _pdf_stock_cache['stock'] is None or (now - _pdf_stock_cache['loaded_at']) > 300:
+        stock_path = get_pdf_stock_path()
+        
+        if not force_rebuild and stock_path.exists():
+            # Load existing stock
+            _pdf_stock_cache['stock'] = load_pdf_stock()
+            _pdf_stock_cache['loaded_at'] = now
+        else:
+            # Rebuild stock
+            _pdf_stock_cache['stock'] = rebuild_pdf_stock()
+            _pdf_stock_cache['loaded_at'] = now
+    
+    return _pdf_stock_cache['stock']
 
 
 def find_cached_pdf_by_path(source_file: str) -> dict:
@@ -102,44 +225,15 @@ def find_cached_pdf_by_path(source_file: str) -> dict:
     return {'found': False}
 
 
-# Cache for PDF list to avoid repeated filesystem scans
-_pdf_cache = {'files': None, 'timestamp': 0}
-
-def get_pdf_cache_list():
-    """Get cached list of PDFs with metadata. Refreshes every 60 seconds."""
-    import time
-    now = time.time()
-    
-    # Refresh cache if older than 60 seconds or not initialized
-    if _pdf_cache['files'] is None or (now - _pdf_cache['timestamp']) > 60:
-        pdf_cache_dir = get_pdf_cache_dir()
-        if pdf_cache_dir.exists():
-            pdf_files = []
-            for pdf_file in pdf_cache_dir.glob('*.pdf'):
-                filename = pdf_file.stem
-                file_title = filename.split('_', 1)[1].lower() if '_' in filename else filename.lower()
-                try:
-                    size_mb = pdf_file.stat().st_size / (1024 * 1024)
-                except:
-                    size_mb = 0
-                pdf_files.append({
-                    'name': pdf_file.name,
-                    'path': str(pdf_file),
-                    'title_part': file_title,
-                    'size_mb': round(size_mb, 2)
-                })
-            _pdf_cache['files'] = pdf_files
-        else:
-            _pdf_cache['files'] = []
-        _pdf_cache['timestamp'] = now
-    
-    return _pdf_cache['files']
-
-
-def find_cached_pdf(title: str, knowledge_bits: list = None) -> dict:
+def find_pdf_in_stock(title: str, knowledge_bits: list = None) -> dict:
     """
-    Find a cached PDF by checking knowledge_bits source_file or title matching.
-    Returns dict with 'found', 'filename', 'path', 'size_mb'.
+    Find a cached PDF using the stock index.
+    Uses multiple matching strategies:
+    1. Direct path from knowledge_bits source_file
+    2. Exact normalized title match
+    3. Fuzzy title match (significant word overlap)
+    
+    Returns dict with 'found', 'filename', 'path', 'size_mb', 'match_type'.
     """
     # First, try to find via source_file in knowledge_bits
     if knowledge_bits:
@@ -148,33 +242,82 @@ def find_cached_pdf(title: str, knowledge_bits: list = None) -> dict:
             if source_file:
                 result = find_cached_pdf_by_path(source_file)
                 if result['found']:
+                    result['match_type'] = 'source_file'
                     return result
     
-    # Fall back to title matching using cached PDF list
-    pdf_files = get_pdf_cache_list()
-    if not pdf_files:
+    # Load the stock index
+    stock = get_pdf_stock()
+    if not stock or not stock.get('pdfs'):
         return {'found': False}
     
-    # Sanitize title for matching
-    sanitized = sanitize_title_for_filename(title).lower()
-    # Also create a more lenient version (first few words)
-    title_words = [w for w in title.lower().split()[:4] if len(w) > 3]
+    # Normalize the search title
+    normalized_search = normalize_title(title)
+    if not normalized_search:
+        return {'found': False}
     
-    # Search cached PDF list
-    for pdf in pdf_files:
-        file_title = pdf['title_part']
-        # Check for partial match
-        if (sanitized[:25] and sanitized[:25] in file_title) or \
-           (file_title[:25] and file_title[:25] in sanitized) or \
-           (title_words and all(w in file_title for w in title_words)):
+    # Strategy 2: Exact normalized title match
+    if normalized_search in stock['title_index']:
+        filename = stock['title_index'][normalized_search]
+        pdf_info = stock['pdfs'].get(filename)
+        if pdf_info:
             return {
                 'found': True,
-                'filename': pdf['name'],
-                'path': pdf['path'],
-                'size_mb': pdf['size_mb']
+                'filename': filename,
+                'path': pdf_info['path'],
+                'size_mb': pdf_info['size_mb'],
+                'match_type': 'exact_title'
+            }
+    
+    # Strategy 3: Fuzzy matching - check word overlap
+    search_words = set(normalized_search.split())
+    # Filter to significant words (length > 3)
+    search_words = {w for w in search_words if len(w) > 3}
+    
+    if len(search_words) >= 2:
+        best_match = None
+        best_score = 0
+        
+        for filename, pdf_info in stock['pdfs'].items():
+            pdf_normalized = pdf_info.get('normalized_title', '')
+            pdf_words = set(pdf_normalized.split())
+            pdf_words = {w for w in pdf_words if len(w) > 3}
+            
+            if not pdf_words:
+                continue
+            
+            # Calculate overlap score
+            overlap = search_words & pdf_words
+            if len(overlap) >= 2:
+                # Score based on how much of both titles match
+                score = len(overlap) / max(len(search_words), len(pdf_words))
+                
+                # Bonus for matching first few significant words
+                search_first = [w for w in normalized_search.split()[:3] if len(w) > 3]
+                pdf_first = [w for w in pdf_normalized.split()[:3] if len(w) > 3]
+                if search_first and pdf_first and search_first[0] == pdf_first[0]:
+                    score += 0.3
+                
+                if score > best_score and score >= 0.5:  # Require at least 50% match
+                    best_score = score
+                    best_match = (filename, pdf_info)
+        
+        if best_match:
+            filename, pdf_info = best_match
+            return {
+                'found': True,
+                'filename': filename,
+                'path': pdf_info['path'],
+                'size_mb': pdf_info['size_mb'],
+                'match_type': f'fuzzy_{int(best_score*100)}%'
             }
     
     return {'found': False}
+
+
+# Legacy function name for compatibility
+def find_cached_pdf(title: str, knowledge_bits: list = None) -> dict:
+    """Find a cached PDF - wrapper for find_pdf_in_stock."""
+    return find_pdf_in_stock(title, knowledge_bits)
 
 
 def load_yaml_file(file_path):
@@ -721,7 +864,8 @@ def api_actor_studied_papers(actor_name):
                             'questions_raised': questions,
                             'pdf_cached': pdf_info.get('found', False),
                             'pdf_filename': pdf_info.get('filename', ''),
-                            'pdf_size_mb': pdf_info.get('size_mb', 0)
+                            'pdf_size_mb': pdf_info.get('size_mb', 0),
+                            'pdf_match_type': pdf_info.get('match_type', '')
                         })
                 except Exception as e:
                     print(f"Error loading {loop_file.name}: {e}")
@@ -772,7 +916,97 @@ def api_actor_studied_papers(actor_name):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/pdf/<filename>')
+# PDF Cache Stock API endpoints - must be BEFORE /api/pdf/<filename> route
+@app.route('/api/pdf-cache/stats')
+def api_pdf_cache_stats():
+    """Get statistics about the PDF cache from the stock index."""
+    try:
+        stock = get_pdf_stock()
+        
+        return jsonify({
+            'exists': True,
+            'path': str(get_pdf_cache_dir()),
+            'total_pdfs': stock.get('total_count', 0),
+            'total_size_mb': stock.get('total_size_mb', 0),
+            'indexed_titles': len(stock.get('title_index', {})),
+            'updated_at': stock.get('updated_at')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pdf-cache/stock')
+def api_pdf_stock():
+    """Get the full PDF stock index."""
+    try:
+        stock = get_pdf_stock()
+        return jsonify(stock)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pdf-cache/rebuild', methods=['POST'])
+def api_pdf_cache_rebuild():
+    """Rebuild the PDF stock index by scanning the cache directory."""
+    try:
+        stock = rebuild_pdf_stock()
+        # Clear the in-memory cache to force reload
+        _pdf_stock_cache['stock'] = stock
+        _pdf_stock_cache['loaded_at'] = __import__('time').time()
+        
+        return jsonify({
+            'success': True,
+            'total_pdfs': stock.get('total_count', 0),
+            'total_size_mb': stock.get('total_size_mb', 0),
+            'indexed_titles': len(stock.get('title_index', {}))
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pdf-cache/list')
+def api_pdf_cache_list():
+    """List all PDFs in the cache from the stock index."""
+    try:
+        stock = get_pdf_stock()
+        
+        pdfs = []
+        for filename, info in stock.get('pdfs', {}).items():
+            pdfs.append({
+                'filename': filename,
+                'title': info.get('original_title', ''),
+                'normalized_title': info.get('normalized_title', ''),
+                'size_mb': info.get('size_mb', 0),
+                'references': info.get('references', [])
+            })
+        
+        # Sort by title
+        pdfs.sort(key=lambda x: x.get('title', '').lower())
+        
+        return jsonify({
+            'total': len(pdfs),
+            'pdfs': pdfs
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pdf-cache/search')
+def api_pdf_cache_search():
+    """Search for a PDF by title in the stock."""
+    try:
+        title = request.args.get('title', '')
+        if not title:
+            return jsonify({'error': 'title parameter required'}), 400
+        
+        result = find_pdf_in_stock(title)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# Serve individual PDF files
+@app.route('/api/pdf/file/<filename>')
 def api_serve_pdf(filename):
     """Serve a cached PDF file."""
     from flask import send_file
@@ -793,64 +1027,6 @@ def api_serve_pdf(filename):
             as_attachment=False,
             download_name=filename
         )
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/pdf-cache/stats')
-def api_pdf_cache_stats():
-    """Get statistics about the PDF cache."""
-    try:
-        pdf_cache_dir = get_pdf_cache_dir()
-        
-        if not pdf_cache_dir.exists():
-            return jsonify({
-                'exists': False,
-                'total_pdfs': 0,
-                'total_size_mb': 0
-            })
-        
-        pdf_files = list(pdf_cache_dir.glob('*.pdf'))
-        total_size = sum(f.stat().st_size for f in pdf_files)
-        
-        return jsonify({
-            'exists': True,
-            'path': str(pdf_cache_dir),
-            'total_pdfs': len(pdf_files),
-            'total_size_mb': round(total_size / (1024 * 1024), 2)
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/pdf-cache/list')
-def api_pdf_cache_list():
-    """List all PDFs in the cache."""
-    try:
-        pdf_cache_dir = get_pdf_cache_dir()
-        
-        if not pdf_cache_dir.exists():
-            return jsonify({'pdfs': []})
-        
-        pdfs = []
-        for pdf_file in sorted(pdf_cache_dir.glob('*.pdf')):
-            stat = pdf_file.stat()
-            # Extract title from filename (format: {hash}_{title}.pdf)
-            filename = pdf_file.stem
-            title = filename.split('_', 1)[1] if '_' in filename else filename
-            title = title.replace('_', ' ')
-            
-            pdfs.append({
-                'filename': pdf_file.name,
-                'title': title,
-                'size_mb': round(stat.st_size / (1024 * 1024), 2),
-                'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
-            })
-        
-        return jsonify({
-            'total': len(pdfs),
-            'pdfs': pdfs
-        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
