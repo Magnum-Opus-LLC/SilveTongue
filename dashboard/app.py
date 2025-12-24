@@ -67,6 +67,116 @@ def get_lora_adapters_dir():
     return array_dir.parent / 'lora_adapters'
 
 
+def get_pdf_cache_dir():
+    """Get the PDF cache directory."""
+    array_dir = get_array_dir()
+    return array_dir / 'data' / 'pdf_cache'
+
+
+def sanitize_title_for_filename(title: str) -> str:
+    """Sanitize a paper title to match PDF cache naming convention."""
+    # Remove special characters and normalize spaces
+    sanitized = re.sub(r'[^\w\s-]', '', title)
+    sanitized = re.sub(r'\s+', '_', sanitized.strip())
+    # Limit length
+    return sanitized[:100]
+
+
+def find_cached_pdf_by_path(source_file: str) -> dict:
+    """
+    Find a cached PDF by its exact source_file path.
+    Returns dict with 'found', 'filename', 'path', 'size_mb'.
+    """
+    if not source_file:
+        return {'found': False}
+    
+    pdf_path = Path(source_file)
+    if pdf_path.exists():
+        size_mb = pdf_path.stat().st_size / (1024 * 1024)
+        return {
+            'found': True,
+            'filename': pdf_path.name,
+            'path': str(pdf_path),
+            'size_mb': round(size_mb, 2)
+        }
+    return {'found': False}
+
+
+# Cache for PDF list to avoid repeated filesystem scans
+_pdf_cache = {'files': None, 'timestamp': 0}
+
+def get_pdf_cache_list():
+    """Get cached list of PDFs with metadata. Refreshes every 60 seconds."""
+    import time
+    now = time.time()
+    
+    # Refresh cache if older than 60 seconds or not initialized
+    if _pdf_cache['files'] is None or (now - _pdf_cache['timestamp']) > 60:
+        pdf_cache_dir = get_pdf_cache_dir()
+        if pdf_cache_dir.exists():
+            pdf_files = []
+            for pdf_file in pdf_cache_dir.glob('*.pdf'):
+                filename = pdf_file.stem
+                file_title = filename.split('_', 1)[1].lower() if '_' in filename else filename.lower()
+                try:
+                    size_mb = pdf_file.stat().st_size / (1024 * 1024)
+                except:
+                    size_mb = 0
+                pdf_files.append({
+                    'name': pdf_file.name,
+                    'path': str(pdf_file),
+                    'title_part': file_title,
+                    'size_mb': round(size_mb, 2)
+                })
+            _pdf_cache['files'] = pdf_files
+        else:
+            _pdf_cache['files'] = []
+        _pdf_cache['timestamp'] = now
+    
+    return _pdf_cache['files']
+
+
+def find_cached_pdf(title: str, knowledge_bits: list = None) -> dict:
+    """
+    Find a cached PDF by checking knowledge_bits source_file or title matching.
+    Returns dict with 'found', 'filename', 'path', 'size_mb'.
+    """
+    # First, try to find via source_file in knowledge_bits
+    if knowledge_bits:
+        for bit in knowledge_bits:
+            source_file = bit.get('source_file', '')
+            if source_file:
+                result = find_cached_pdf_by_path(source_file)
+                if result['found']:
+                    return result
+    
+    # Fall back to title matching using cached PDF list
+    pdf_files = get_pdf_cache_list()
+    if not pdf_files:
+        return {'found': False}
+    
+    # Sanitize title for matching
+    sanitized = sanitize_title_for_filename(title).lower()
+    # Also create a more lenient version (first few words)
+    title_words = [w for w in title.lower().split()[:4] if len(w) > 3]
+    
+    # Search cached PDF list
+    for pdf in pdf_files:
+        file_title = pdf['title_part']
+        # Check for partial match
+        if (sanitized[:25] and sanitized[:25] in file_title) or \
+           (file_title[:25] and file_title[:25] in sanitized) or \
+           (title_words and all(w in file_title for w in title_words)):
+            return {
+                'found': True,
+                'filename': pdf['name'],
+                'path': pdf['path'],
+                'size_mb': pdf['size_mb']
+            }
+    
+    return {'found': False}
+
+
 def load_yaml_file(file_path):
     """Load a YAML file safely."""
     if file_path.exists():
@@ -532,6 +642,215 @@ def api_actor_loops(actor_name):
                     continue
         
         return jsonify(loops[:20])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/actor/<actor_name>/studied-papers')
+def api_actor_studied_papers(actor_name):
+    """Get all studied papers and their extracted concepts for an actor."""
+    import sys
+    try:
+        array_dir = get_array_dir()
+        loops_dir = array_dir / 'data' / actor_name / 'cognitive_loops'
+        
+        print(f"[studied-papers] Looking for papers in: {loops_dir}", flush=True)
+        print(f"[studied-papers] Directory exists: {loops_dir.exists()}", flush=True)
+        sys.stdout.flush()
+        
+        papers = []
+        files_checked = 0
+        files_with_papers = 0
+        
+        if loops_dir.exists():
+            for loop_file in sorted(loops_dir.glob('loop_*.json'), reverse=True):
+                files_checked += 1
+                try:
+                    with open(loop_file, 'r') as f:
+                        data = json.load(f)
+                    
+                    state = data.get('state', {})
+                    loop_topic = state.get('topic', 'Unknown Topic')
+                    loop_id = state.get('loop_id', loop_file.stem)
+                    
+                    studied_papers = state.get('studied_papers', [])
+                    if studied_papers:
+                        files_with_papers += 1
+                        print(f"[studied-papers] {loop_file.name}: {len(studied_papers)} papers")
+                    
+                    # Extract studied papers with their concepts
+                    for paper_entry in studied_papers:
+                        paper = paper_entry.get('paper', {}) or {}
+                        study_result = paper_entry.get('study_result', {}) or {}
+                        
+                        # Extract knowledge bits/concepts
+                        extraction = study_result.get('extraction', {}) or {}
+                        study_notes = study_result.get('study_notes', {}) or {}
+                        
+                        if extraction:
+                            # New format from StudyProcessor
+                            knowledge_bits = extraction.get('knowledge_bits', []) or []
+                            questions = extraction.get('questions_raised', []) or []
+                            summary = study_notes.get('summary', '') or ''
+                            key_concepts = study_notes.get('key_concepts', []) or []
+                        else:
+                            # Old format
+                            knowledge_bits = study_result.get('knowledge_bits', []) or []
+                            questions = study_result.get('questions', []) or []
+                            notes = study_result.get('notes', {}) or {}
+                            summary = notes.get('summary', notes.get('paper_summary', '')) if isinstance(notes, dict) else ''
+                            key_concepts = notes.get('key_concepts', []) if isinstance(notes, dict) else []
+                        
+                        title = paper.get('title', 'Unknown Paper')
+                        # Check if PDF is cached (pass knowledge_bits for source_file matching)
+                        pdf_info = find_cached_pdf(title, knowledge_bits)
+                        
+                        papers.append({
+                            'title': title,
+                            'authors': paper.get('authors', paper.get('author', '')),
+                            'url': paper.get('link', paper.get('url', '')),
+                            'pdf_url': paper.get('pdf_url', paper.get('pdf_link', '')),
+                            'abstract': paper.get('abstract', paper.get('summary', '')),
+                            'source': paper.get('source', 'unknown'),
+                            'studied_at': paper_entry.get('studied_at', ''),
+                            'loop_topic': loop_topic,
+                            'loop_id': loop_id,
+                            'summary': summary,
+                            'key_concepts': key_concepts,
+                            'knowledge_bits': knowledge_bits,
+                            'questions_raised': questions,
+                            'pdf_cached': pdf_info.get('found', False),
+                            'pdf_filename': pdf_info.get('filename', ''),
+                            'pdf_size_mb': pdf_info.get('size_mb', 0)
+                        })
+                except Exception as e:
+                    print(f"Error loading {loop_file.name}: {e}")
+                    continue
+        
+        print(f"[studied-papers] Checked {files_checked} files, {files_with_papers} had papers, total {len(papers)} papers found")
+        
+        # Also check learning_sessions for additional paper data
+        sessions_dir = array_dir / 'data' / actor_name / 'learning_sessions'
+        if sessions_dir.exists():
+            for session_file in sorted(sessions_dir.glob('session_*.json'), reverse=True):
+                try:
+                    with open(session_file, 'r') as f:
+                        session = json.load(f)
+                    
+                    session_topic = session.get('metadata', {}).get('topic', session.get('topic', 'Unknown'))
+                    
+                    for note in session.get('study_notes', []):
+                        # Avoid duplicates by checking title
+                        title = note.get('title', '')
+                        if title and not any(p['title'] == title for p in papers):
+                            papers.append({
+                                'title': title,
+                                'authors': '',
+                                'url': note.get('url', ''),
+                                'pdf_url': '',
+                                'abstract': '',
+                                'source': note.get('source_type', 'session'),
+                                'studied_at': note.get('timestamp', ''),
+                                'loop_topic': session_topic,
+                                'loop_id': session_file.stem,
+                                'summary': note.get('summary', ''),
+                                'key_concepts': note.get('key_points', []),
+                                'knowledge_bits': [],
+                                'questions_raised': note.get('questions', [])
+                            })
+                except Exception as e:
+                    print(f"Error loading session {session_file.name}: {e}")
+                    continue
+        
+        return jsonify({
+            'total': len(papers),
+            'papers': papers
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pdf/<filename>')
+def api_serve_pdf(filename):
+    """Serve a cached PDF file."""
+    from flask import send_file
+    try:
+        pdf_cache_dir = get_pdf_cache_dir()
+        pdf_path = pdf_cache_dir / filename
+        
+        if not pdf_path.exists():
+            return jsonify({'error': 'PDF not found'}), 404
+        
+        # Security: ensure the path is within pdf_cache_dir
+        if not str(pdf_path.resolve()).startswith(str(pdf_cache_dir.resolve())):
+            return jsonify({'error': 'Invalid path'}), 403
+        
+        return send_file(
+            pdf_path,
+            mimetype='application/pdf',
+            as_attachment=False,
+            download_name=filename
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pdf-cache/stats')
+def api_pdf_cache_stats():
+    """Get statistics about the PDF cache."""
+    try:
+        pdf_cache_dir = get_pdf_cache_dir()
+        
+        if not pdf_cache_dir.exists():
+            return jsonify({
+                'exists': False,
+                'total_pdfs': 0,
+                'total_size_mb': 0
+            })
+        
+        pdf_files = list(pdf_cache_dir.glob('*.pdf'))
+        total_size = sum(f.stat().st_size for f in pdf_files)
+        
+        return jsonify({
+            'exists': True,
+            'path': str(pdf_cache_dir),
+            'total_pdfs': len(pdf_files),
+            'total_size_mb': round(total_size / (1024 * 1024), 2)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pdf-cache/list')
+def api_pdf_cache_list():
+    """List all PDFs in the cache."""
+    try:
+        pdf_cache_dir = get_pdf_cache_dir()
+        
+        if not pdf_cache_dir.exists():
+            return jsonify({'pdfs': []})
+        
+        pdfs = []
+        for pdf_file in sorted(pdf_cache_dir.glob('*.pdf')):
+            stat = pdf_file.stat()
+            # Extract title from filename (format: {hash}_{title}.pdf)
+            filename = pdf_file.stem
+            title = filename.split('_', 1)[1] if '_' in filename else filename
+            title = title.replace('_', ' ')
+            
+            pdfs.append({
+                'filename': pdf_file.name,
+                'title': title,
+                'size_mb': round(stat.st_size / (1024 * 1024), 2),
+                'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
+            })
+        
+        return jsonify({
+            'total': len(pdfs),
+            'pdfs': pdfs
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
