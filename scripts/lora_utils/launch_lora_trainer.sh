@@ -65,10 +65,23 @@ docker run \
 
     # Install dependencies (per NVIDIA Unsloth instructions)
     pip install -q transformers peft hf_transfer "datasets==4.3.0" "trl==0.26.1"
-    pip install -q --no-deps unsloth unsloth_zoo bitsandbytes
+    pip install -q --no-deps unsloth==2025.12.8 transformers==4.57.3 unsloth_zoo bitsandbytes psutil
 
     # Install Flask for the training server
     pip install -q flask flask-cors
+
+    FILE="/app/unsloth_compiled_cache/UnslothSFTTrainer.py"
+
+    if [ -f "$FILE" ]; then
+      if ! grep -qE "^[[:space:]]*import[[:space:]]+psutil[[:space:]]*$" "$FILE"; then
+        sed -i "2i import psutil" "$FILE"
+        echo "1"
+      else
+        echo "2"
+      fi
+    else
+      echo "3"
+    fi
 
     echo "=========================================="
     echo "Starting LoRA Training Server on port $PORT..."

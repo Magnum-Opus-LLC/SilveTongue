@@ -22,6 +22,8 @@ from pathlib import Path
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import psutil, sys
+import importlib
 
 app = Flask(__name__)
 CORS(app)
@@ -36,8 +38,7 @@ DATASET_DIR = Path(os.environ.get(
 # Training state
 active_jobs = {}
 completed_jobs = {}
-
-
+        
 def get_next_version(actor_name: str) -> str:
     """Get the next version number for an actor's adapter (v1, v2, etc.)."""
     actor_dir = LORA_OUTPUT_DIR / actor_name
@@ -138,7 +139,21 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
     from datasets import load_dataset
     from trl import SFTTrainer
     from transformers import TrainingArguments
-    
+
+    # --- Fix Unsloth compiled trainer missing psutil import ---
+    try:
+        import UnslothSFTTrainer as UST  # this matches the traceback module name
+        UST.psutil = psutil
+        print(f"[{job_id}] Patched runtime: injected psutil into UnslothSFTTrainer")
+    except Exception as e:
+        # fallback: patch any loaded module that contains it
+        patched = False
+        for name, mod in list(sys.modules.items()):
+            if name and "UnslothSFTTrainer" in name:
+                setattr(mod, "psutil", psutil)
+                patched = True
+        print(f"[{job_id}] Runtime patch fallback applied={patched} err={e}")
+
     active_jobs[job_id]["status"] = "loading_model"
     
     # Allow base_model override from config
@@ -209,7 +224,6 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
         if example.get("input"):
             messages[0]["content"] += f"\n\n{example['input']}"
         messages.append({"role": "assistant", "content": example['output']})
-        
         # Apply chat template
         text = tokenizer.apply_chat_template(
             messages,
@@ -257,12 +271,14 @@ def train_with_unsloth(job_id: str, actor_name: str, dataset_path: Path, config:
                 active_jobs[job_id]["progress"] = min(progress, 90)
                 active_jobs[job_id]["current_step"] = state.global_step
                 active_jobs[job_id]["loss"] = state.log_history[-1].get("loss") if state.log_history else None
-    
+    dataset_num_proc = max(psutil.cpu_count()+4, 2)
+
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
         train_dataset=dataset,
         dataset_text_field="text",
+        dataset_num_proc=dataset_num_proc,
         max_seq_length=config["max_seq_length"],
         args=training_args,
     )

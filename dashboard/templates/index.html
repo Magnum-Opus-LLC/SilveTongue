@@ -346,14 +346,18 @@
                         </div>
                         
                         <!-- Library Stats -->
-                        <div class="grid grid-cols-4 gap-4">
+                        <div class="grid grid-cols-5 gap-4">
                             <div class="bg-gray-700 rounded-lg p-3 text-center">
                                 <div class="text-2xl font-bold text-blue-400">[[ pdfLibraryStats.total_pdfs || 0 ]]</div>
                                 <div class="text-xs text-gray-400">Total PDFs</div>
                             </div>
                             <div class="bg-gray-700 rounded-lg p-3 text-center">
-                                <div class="text-2xl font-bold text-green-400">[[ pdfLibraryStats.indexed_titles || 0 ]]</div>
-                                <div class="text-xs text-gray-400">Unique Titles</div>
+                                <div class="text-2xl font-bold text-green-400">[[ pdfLibraryStats.studied_count || 0 ]]</div>
+                                <div class="text-xs text-gray-400">Studied</div>
+                            </div>
+                            <div class="bg-gray-700 rounded-lg p-3 text-center">
+                                <div class="text-2xl font-bold text-orange-400">[[ pdfLibraryStats.not_studied_count || 0 ]]</div>
+                                <div class="text-xs text-gray-400">Not Studied</div>
                             </div>
                             <div class="bg-gray-700 rounded-lg p-3 text-center">
                                 <div class="text-2xl font-bold text-yellow-400">[[ pdfLibraryStats.total_size_mb ? (pdfLibraryStats.total_size_mb / 1024).toFixed(2) : 0 ]] GB</div>
@@ -384,6 +388,7 @@
                                 <tr>
                                     <th class="px-4 py-3 text-left text-sm font-medium text-gray-300">#</th>
                                     <th class="px-4 py-3 text-left text-sm font-medium text-gray-300">Title</th>
+                                    <th class="px-4 py-3 text-center text-sm font-medium text-gray-300 w-24">Status</th>
                                     <th class="px-4 py-3 text-right text-sm font-medium text-gray-300 w-24">Size</th>
                                     <th class="px-4 py-3 text-center text-sm font-medium text-gray-300 w-32">Actions</th>
                                 </tr>
@@ -395,12 +400,26 @@
                                         [[ index + 1 ]]
                                     </td>
                                     <td class="px-4 py-3">
-                                        <div class="font-medium text-white truncate" style="max-width: 700px;" :title="pdf.title">
+                                        <div class="font-medium text-white truncate" style="max-width: 600px;" :title="pdf.title">
                                             [[ pdf.title || pdf.filename ]]
                                         </div>
-                                        <div class="text-xs text-gray-500 truncate" style="max-width: 700px;">
+                                        <div class="text-xs text-gray-500 truncate" style="max-width: 600px;">
                                             [[ pdf.filename ]]
                                         </div>
+                                        <div v-if="pdf.studied && pdf.studied_by && pdf.studied_by.length" class="text-xs text-green-400 mt-1">
+                                            📖 Studied by: [[ pdf.studied_by.join(', ') ]]
+                                            <span v-if="pdf.study_topics && pdf.study_topics.length" class="text-gray-500 ml-2">
+                                                Topics: [[ pdf.study_topics.slice(0, 2).join(', ') ]][[ pdf.study_topics.length > 2 ? '...' : '' ]]
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 text-center">
+                                        <span v-if="pdf.studied" class="px-2 py-1 text-xs rounded-full bg-green-600/20 text-green-400" :title="'Studied ' + pdf.study_count + ' time(s)'">
+                                            ✅ Studied
+                                        </span>
+                                        <span v-else class="px-2 py-1 text-xs rounded-full bg-gray-600/20 text-gray-400">
+                                            📄 Cached
+                                        </span>
                                     </td>
                                     <td class="px-4 py-3 text-right text-sm text-gray-400">
                                         [[ pdf.size_mb.toFixed(2) ]] MB
@@ -1568,14 +1587,18 @@
                                     </div>
                                     
                                     <!-- Library Stats -->
-                                    <div class="grid grid-cols-4 gap-4">
+                                    <div class="grid grid-cols-5 gap-4">
                                         <div class="bg-gray-700 rounded-lg p-3 text-center">
                                             <div class="text-2xl font-bold text-blue-400">[[ pdfLibraryStats.total_pdfs || 0 ]]</div>
                                             <div class="text-xs text-gray-400">Total PDFs</div>
                                         </div>
                                         <div class="bg-gray-700 rounded-lg p-3 text-center">
-                                            <div class="text-2xl font-bold text-green-400">[[ pdfLibraryStats.indexed_titles || 0 ]]</div>
-                                            <div class="text-xs text-gray-400">Indexed Titles</div>
+                                            <div class="text-2xl font-bold text-green-400">[[ pdfLibraryStats.studied_count || 0 ]]</div>
+                                            <div class="text-xs text-gray-400">Studied</div>
+                                        </div>
+                                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                                            <div class="text-2xl font-bold text-orange-400">[[ pdfLibraryStats.not_studied_count || 0 ]]</div>
+                                            <div class="text-xs text-gray-400">Not Studied</div>
                                         </div>
                                         <div class="bg-gray-700 rounded-lg p-3 text-center">
                                             <div class="text-2xl font-bold text-yellow-400">[[ pdfLibraryStats.total_size_mb ? pdfLibraryStats.total_size_mb.toFixed(1) : 0 ]] MB</div>
@@ -1605,6 +1628,7 @@
                                         <thead class="bg-gray-700">
                                             <tr>
                                                 <th class="px-4 py-3 text-left text-sm font-medium text-gray-300">Title</th>
+                                                <th class="px-4 py-3 text-center text-sm font-medium text-gray-300 w-24">Status</th>
                                                 <th class="px-4 py-3 text-right text-sm font-medium text-gray-300 w-24">Size</th>
                                                 <th class="px-4 py-3 text-center text-sm font-medium text-gray-300 w-32">Actions</th>
                                             </tr>
@@ -1613,12 +1637,23 @@
                                             <tr v-for="pdf in filteredPdfLibrary.slice(0, 100)" :key="pdf.filename" 
                                                 class="hover:bg-gray-700/50 transition-colors">
                                                 <td class="px-4 py-3">
-                                                    <div class="font-medium text-white truncate" style="max-width: 600px;" :title="pdf.title">
-                                                        [[ pdf.title ]]
+                                                    <div class="font-medium text-white truncate" style="max-width: 500px;" :title="pdf.title">
+                                                        [[ pdf.title || pdf.filename ]]
                                                     </div>
-                                                    <div class="text-xs text-gray-500 truncate" style="max-width: 600px;">
+                                                    <div class="text-xs text-gray-500 truncate" style="max-width: 500px;">
                                                         [[ pdf.filename ]]
                                                     </div>
+                                                    <div v-if="pdf.studied && pdf.studied_by && pdf.studied_by.length" class="text-xs text-green-400 mt-1">
+                                                        📖 Studied by: [[ pdf.studied_by.join(', ') ]]
+                                                    </div>
+                                                </td>
+                                                <td class="px-4 py-3 text-center">
+                                                    <span v-if="pdf.studied" class="px-2 py-1 text-xs rounded-full bg-green-600/20 text-green-400" :title="'Studied ' + pdf.study_count + ' time(s)'">
+                                                        ✅ Studied
+                                                    </span>
+                                                    <span v-else class="px-2 py-1 text-xs rounded-full bg-gray-600/20 text-gray-400">
+                                                        📄 Cached
+                                                    </span>
                                                 </td>
                                                 <td class="px-4 py-3 text-right text-sm text-gray-400">
                                                     [[ pdf.size_mb.toFixed(2) ]] MB
