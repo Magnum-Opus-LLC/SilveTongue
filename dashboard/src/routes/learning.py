@@ -88,6 +88,7 @@ def api_actor_studied_papers(actor_name):
         sys.stdout.flush()
 
         papers = []
+        seen_titles = set()  # Track titles to avoid duplicates
         files_checked = 0
         files_with_papers = 0
 
@@ -101,6 +102,7 @@ def api_actor_studied_papers(actor_name):
                     state = data.get('state', {})
                     loop_topic = state.get('topic', 'Unknown Topic')
                     loop_id = state.get('loop_id', loop_file.stem)
+                    updated_at = state.get('updated_at', '')
 
                     studied_papers = state.get('studied_papers', [])
                     if studied_papers:
@@ -139,6 +141,10 @@ def api_actor_studied_papers(actor_name):
                                 'key_concepts', []) if isinstance(notes, dict) else []
 
                         title = paper.get('title', 'Unknown Paper')
+                        if title in seen_titles:
+                            continue
+                        seen_titles.add(title)
+                        
                         # Check if PDF is cached (pass knowledge_bits for source_file matching)
                         pdf_info = find_cached_pdf(title, knowledge_bits)
 
@@ -159,8 +165,50 @@ def api_actor_studied_papers(actor_name):
                             'pdf_cached': pdf_info.get('found', False),
                             'pdf_filename': pdf_info.get('filename', ''),
                             'pdf_size_mb': pdf_info.get('size_mb', 0),
-                            'pdf_match_type': pdf_info.get('match_type', '')
+                            'pdf_match_type': pdf_info.get('match_type', ''),
+                            'status': 'studied'
                         })
+                    
+                    # If no studied_papers but total_papers_studied > 0, 
+                    # include discovered_papers as "discovered" status
+                    # This handles legacy loops where studied_papers was cleared
+                    total_studied = state.get('total_papers_studied', 0)
+                    if not studied_papers and total_studied > 0:
+                        discovered_papers = state.get('discovered_papers', [])
+                        for paper in discovered_papers:
+                            title = paper.get('title', '')
+                            if not title or title in seen_titles:
+                                continue
+                            seen_titles.add(title)
+                            
+                            pdf_info = find_cached_pdf(title, [])
+                            
+                            papers.append({
+                                'title': title,
+                                'authors': paper.get('authors', paper.get('publication_info', '')),
+                                'url': paper.get('link', ''),
+                                'pdf_url': '',
+                                'abstract': '',
+                                'source': paper.get('source', 'scholar'),
+                                'studied_at': updated_at,  # Use loop update time
+                                'loop_topic': loop_topic,
+                                'loop_id': loop_id,
+                                'summary': '',
+                                'key_concepts': [],
+                                'knowledge_bits': [],
+                                'questions_raised': [],
+                                'pdf_cached': pdf_info.get('found', False),
+                                'pdf_filename': pdf_info.get('filename', ''),
+                                'pdf_size_mb': pdf_info.get('size_mb', 0),
+                                'pdf_match_type': pdf_info.get('match_type', ''),
+                                'status': 'discovered',  # Mark as discovered (not confirmed studied)
+                                'citation_count': paper.get('citation_count', 0)
+                            })
+                        
+                        if discovered_papers:
+                            files_with_papers += 1
+                            print(f"[studied-papers] {loop_file.name}: {len(discovered_papers)} discovered papers (total_studied={total_studied})")
+                            
                 except Exception as e:
                     print(f"Error loading {loop_file.name}: {e}")
                     continue

@@ -101,7 +101,7 @@ def get_actor_knowledge_paths(actor_name: str) -> dict:
     actor_root = get_actor_root(actor_name)
 
     return {
-        'values': actor_root / 'characteristic' / 'values.yaml',
+        'values': actor_root / 'characteristic' / 'value' / 'values.yaml',
         'principles': actor_root / 'expertise' / 'domain' / 'principal' / 'principles.yaml',
         'experiences': actor_root / 'expertise' / 'domain' / 'experience' / 'experiences.yaml',
         'core_knowledge': actor_root / 'expertise' / 'domain' / 'knowledge' / 'core' / 'core_knowledge.yaml',

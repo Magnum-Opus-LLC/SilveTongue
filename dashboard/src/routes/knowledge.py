@@ -35,31 +35,44 @@ def api_add_knowledge(actor_name, knowledge_type):
     paths = get_actor_knowledge_paths(actor_name)
 
     if knowledge_type not in paths:
-        return jsonify({'error': 'Invalid knowledge type'}), 400
+        return jsonify({'success': False, 'error': f'Invalid knowledge type: {knowledge_type}'}), 400
 
-    data = request.json
+    # Handle both JSON and form data
+    if request.is_json:
+        data = request.json or {}
+    else:
+        data = request.form.to_dict() if request.form else {}
+    
     content = data.get('content', '')
+    if not content:
+        return jsonify({'success': False, 'error': 'No content provided'}), 400
+    
     source = data.get('source', 'dashboard')
 
-    success = add_to_yaml_list(
-        paths[knowledge_type], knowledge_type, content, source)
-    return jsonify({'success': success})
+    try:
+        success = add_to_yaml_list(
+            paths[knowledge_type], knowledge_type, content, source)
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Item already exists (duplicate)'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @knowledge_bp.route('/api/actor/<actor_name>/knowledge/<knowledge_type>/<int:index>', methods=['DELETE'])
 def api_delete_knowledge(actor_name, knowledge_type, index):
     """Delete a knowledge item by index."""
-    actor_root = get_actor_root(actor_name)
     paths = get_actor_knowledge_paths(actor_name)
 
     if knowledge_type not in paths:
-        return jsonify({'error': 'Invalid knowledge type'}), 400
+        return jsonify({'success': False, 'error': f'Invalid knowledge type: {knowledge_type}'}), 400
 
     file_path = paths[knowledge_type]
 
     try:
         if not file_path.exists():
-            return jsonify({'error': 'Knowledge file not found'}), 404
+            return jsonify({'success': False, 'error': 'Knowledge file not found'}), 404
 
         with open(file_path, 'r') as f:
             data = yaml.safe_load(f) or {}
@@ -67,10 +80,10 @@ def api_delete_knowledge(actor_name, knowledge_type, index):
         items = data.get(knowledge_type, [])
 
         if not isinstance(items, list):
-            return jsonify({'error': 'Invalid knowledge structure'}), 500
+            return jsonify({'success': False, 'error': 'Invalid knowledge structure'}), 500
 
         if index < 0 or index >= len(items):
-            return jsonify({'error': 'Index out of range'}), 400
+            return jsonify({'success': False, 'error': f'Index {index} out of range (0-{len(items)-1})'}), 400
 
         deleted_item = items.pop(index)
         data[knowledge_type] = items

@@ -1379,10 +1379,11 @@ Return JSON:
             self._log("\n   🔄 Continuing to next iteration...")
             self.state.iteration += 1
             
-            # Reset per-iteration state
+            # Reset per-iteration state (but keep cumulative data like studied_papers)
             self.state.discovered_papers = []
             self.state.selected_papers = []
-            self.state.studied_papers = []
+            # Note: Don't clear studied_papers - keep cumulative record for study tracking
+            # self.state.studied_papers = []  
             self.state.knowledge_bits = []
             self.state.study_notes = []
             

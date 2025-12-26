@@ -29,7 +29,7 @@ def get_chat_completion(messages, temperature=0.7, model_override=None, max_toke
         messages (list): List of message dictionaries (role, content).
         temperature (float): Sampling temperature.
         model_override (str): Optional model name to use.
-        max_tokens (int): Maximum tokens to generate. If None, dynamically calculated.
+        max_tokens (int): Maximum tokens to generate. If None, let API decide.
 
     Returns:
         str: The content of the response message.
@@ -39,16 +39,6 @@ def get_chat_completion(messages, temperature=0.7, model_override=None, max_toke
     api_host = config.get('apiHost')
     api_key = config.get('apiKey', 'EMPTY')  # Default to EMPTY if not provided
     model = model_override or config.get('model')
-    context_window = config.get('max_tokens', 32768)
-    
-    # Calculate input tokens (rough estimate - be conservative, use 3 chars per token)
-    input_text = "".join(m.get('content', '') for m in messages)
-    input_tokens = len(input_text) // 3  # More conservative than // 4
-    
-    # Dynamic max_tokens: use remaining context window (with larger buffer for safety)
-    if max_tokens is None:
-        max_tokens = context_window - input_tokens - 500  # 500 token buffer for safety
-        max_tokens = max(1024, min(max_tokens, context_window - 1000))  # Cap to leave room
 
     if not api_host:
         raise ValueError("apiHost not defined in config.json")
@@ -65,12 +55,16 @@ def get_chat_completion(messages, temperature=0.7, model_override=None, max_toke
     )
 
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        # Build kwargs - only include max_tokens if explicitly provided
+        kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        
+        response = client.chat.completions.create(**kwargs)
         return response.choices[0].message.content
     except Exception as e:
         raise RuntimeError(f"Failed to get chat completion: {e}")

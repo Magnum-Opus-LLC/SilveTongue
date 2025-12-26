@@ -24,13 +24,21 @@ def get_all_studied_papers():
     """
     Scan all actors' cognitive_loops to build a map of studied papers.
     Returns dict mapping normalized_title -> {actors: [...], studied_at: ..., loop_topic: ...}
+    Also maps by filename for PDFs that were actually downloaded.
+    
+    Enhanced to also check:
+    - discovered_papers in state (papers found during learning)
+    - history entries for study actions with timestamps
+    - PDF file timestamps to correlate with learning sessions
     """
     array_dir = get_array_dir()
     actors_dir = array_dir / 'actors'
     studied_map = {}  # normalized_title -> study info
+    filename_map = {}  # filename -> study info (for direct PDF matches)
+    learning_sessions = []  # Track (actor, start_time, end_time, topic) for timestamp matching
     
     if not actors_dir.exists():
-        return studied_map
+        return studied_map, filename_map
     
     for actor_dir in actors_dir.iterdir():
         if not actor_dir.is_dir() or actor_dir.name.startswith('.'):
@@ -48,12 +56,96 @@ def get_all_studied_papers():
                     data = json.load(f)
                 
                 state = data.get('state', {})
+                history = data.get('history', [])
                 loop_topic = state.get('topic', 'Unknown')
+                
+                # Track learning session time range for PDF timestamp correlation
+                started_at = state.get('started_at', '')
+                updated_at = state.get('updated_at', '')
+                if started_at and updated_at:
+                    learning_sessions.append({
+                        'actor': actor_name,
+                        'start': started_at,
+                        'end': updated_at,
+                        'topic': loop_topic,
+                        'total_studied': state.get('total_papers_studied', 0)
+                    })
+                
+                # Process knowledge_bits for source_file references
+                for kb in state.get('knowledge_bits', []):
+                    source_file = kb.get('source_file', '')
+                    if source_file and source_file.endswith('.pdf'):
+                        filename = Path(source_file).name
+                        if filename not in filename_map:
+                            filename_map[filename] = {
+                                'actors': [],
+                                'study_count': 0,
+                                'last_studied': '',
+                                'topics': []
+                            }
+                        info = filename_map[filename]
+                        if actor_name not in info['actors']:
+                            info['actors'].append(actor_name)
+                        info['study_count'] += 1
+                        if loop_topic and loop_topic not in info['topics']:
+                            info['topics'].append(loop_topic)
+                
+                # Process discovered_papers - these are papers found and potentially studied
+                for paper in state.get('discovered_papers', []):
+                    title = paper.get('title', '')
+                    if not title:
+                        continue
+                    normalized = normalize_title(title)
+                    if not normalized:
+                        continue
+                    
+                    # Mark as discovered (not confirmed studied, but likely if total_papers_studied > 0)
+                    if state.get('total_papers_studied', 0) > 0:
+                        if normalized not in studied_map:
+                            studied_map[normalized] = {
+                                'actors': [],
+                                'study_count': 0,
+                                'last_studied': updated_at,
+                                'topics': [],
+                                'original_title': title,
+                                'status': 'discovered'  # May have been studied
+                            }
+                        info = studied_map[normalized]
+                        if actor_name not in info['actors']:
+                            info['actors'].append(actor_name)
+                        if loop_topic and loop_topic not in info['topics']:
+                            info['topics'].append(loop_topic)
                 
                 for paper_entry in state.get('studied_papers', []):
                     paper = paper_entry.get('paper', {}) or {}
                     title = paper.get('title', '')
+                    studied_at = paper_entry.get('studied_at', '')
                     
+                    # Check for actual PDF file path in study_result
+                    study_result = paper_entry.get('study_result', {})
+                    if study_result:
+                        sr_paper = study_result.get('paper', {})
+                        if sr_paper:
+                            file_path = sr_paper.get('file_path', '')
+                            if file_path:
+                                filename = Path(file_path).name
+                                if filename not in filename_map:
+                                    filename_map[filename] = {
+                                        'actors': [],
+                                        'study_count': 0,
+                                        'last_studied': '',
+                                        'topics': []
+                                    }
+                                info = filename_map[filename]
+                                if actor_name not in info['actors']:
+                                    info['actors'].append(actor_name)
+                                info['study_count'] += 1
+                                if studied_at > info['last_studied']:
+                                    info['last_studied'] = studied_at
+                                if loop_topic and loop_topic not in info['topics']:
+                                    info['topics'].append(loop_topic)
+                    
+                    # Also track by title for fuzzy matching
                     if not title:
                         continue
                     
@@ -61,18 +153,18 @@ def get_all_studied_papers():
                     if not normalized:
                         continue
                     
-                    studied_at = paper_entry.get('studied_at', '')
-                    
                     if normalized not in studied_map:
                         studied_map[normalized] = {
                             'actors': [],
                             'study_count': 0,
                             'last_studied': '',
                             'topics': [],
-                            'original_title': title
+                            'original_title': title,
+                            'status': 'studied'
                         }
                     
                     info = studied_map[normalized]
+                    info['status'] = 'studied'  # Confirmed studied
                     if actor_name not in info['actors']:
                         info['actors'].append(actor_name)
                     info['study_count'] += 1
@@ -84,7 +176,40 @@ def get_all_studied_papers():
             except Exception as e:
                 continue
     
-    return studied_map
+    # Now correlate PDF file timestamps with learning sessions
+    # This helps identify PDFs that were downloaded during learning
+    pdf_cache_dir = get_pdf_cache_dir()
+    if pdf_cache_dir.exists() and learning_sessions:
+        for pdf_file in pdf_cache_dir.glob('*.pdf'):
+            try:
+                # Get file modification time
+                mtime = pdf_file.stat().st_mtime
+                pdf_time = datetime.fromtimestamp(mtime).isoformat()
+                
+                # Check if this PDF was created during any learning session
+                for session in learning_sessions:
+                    if session['start'] <= pdf_time <= session['end']:
+                        filename = pdf_file.name
+                        if filename not in filename_map:
+                            filename_map[filename] = {
+                                'actors': [],
+                                'study_count': 0,
+                                'last_studied': pdf_time,
+                                'topics': [],
+                                'inferred': True  # Inferred from timestamp
+                            }
+                        info = filename_map[filename]
+                        if session['actor'] not in info['actors']:
+                            info['actors'].append(session['actor'])
+                        if session['topic'] and session['topic'] not in info['topics']:
+                            info['topics'].append(session['topic'])
+                        if pdf_time > info['last_studied']:
+                            info['last_studied'] = pdf_time
+                        break  # Found matching session
+            except Exception:
+                continue
+    
+    return studied_map, filename_map
 
 
 @pdf_cache_bp.route('/api/pdf-cache/stats')
@@ -96,16 +221,38 @@ def api_pdf_cache_stats():
         book.load()
         stats = book.get_stats()
         
+        # Get live study count from cognitive loops (more accurate than PDF Book cache)
+        studied_map, filename_map = get_all_studied_papers()
+        
+        # Count PDFs that match studied papers
+        pdf_cache_dir = get_pdf_cache_dir()
+        studied_count = 0
+        if pdf_cache_dir.exists():
+            for pdf_file in pdf_cache_dir.glob('*.pdf'):
+                filename = pdf_file.name
+                # Check by filename match
+                if filename in filename_map:
+                    studied_count += 1
+                    continue
+                # Check by title match
+                title = filename.split('_', 1)[-1].replace('.pdf', '').replace('_', ' ')
+                normalized = normalize_title(title)
+                if normalized in studied_map:
+                    studied_count += 1
+        
+        valid_pdfs = stats.get('valid_pdfs', 0)
+        duplicates = stats.get('duplicates', 0)
+        
         return jsonify({
             'exists': True,
             'path': str(get_pdf_cache_dir()),
             'total_pdfs': stats.get('total_pdfs', 0),
-            'valid_pdfs': stats.get('valid_pdfs', 0),
+            'valid_pdfs': valid_pdfs,
             'invalid_pdfs': stats.get('invalid_pdfs', 0),
-            'duplicates': stats.get('duplicates', 0),
+            'duplicates': duplicates,
             'total_size_mb': stats.get('total_size_mb', 0),
-            'studied_count': stats.get('studied_pdfs', 0),
-            'not_studied_count': stats.get('valid_pdfs', 0) - stats.get('studied_pdfs', 0) - stats.get('duplicates', 0),
+            'studied_count': studied_count,
+            'not_studied_count': max(0, valid_pdfs - studied_count - duplicates),
             'updated_at': book._data.get('updated_at')
         })
     except Exception as e:
@@ -234,8 +381,8 @@ def api_pdf_cache_list():
         book = get_pdf_book()
         book.load()
         
-        # Get studied papers map
-        studied_map = get_all_studied_papers()
+        # Get studied papers maps (by title and by filename)
+        studied_map, filename_map = get_all_studied_papers()
         
         pdfs = []
         for filename, info in book._data.get('pdfs', {}).items():
@@ -247,12 +394,38 @@ def api_pdf_cache_list():
                 continue
                 
             normalized = info.get('normalized_title', '')
-            study_info = studied_map.get(normalized, {})
             
-            # Also check study_info from PDF Book
+            # Check study status from multiple sources:
+            # 1. Direct filename match (most reliable)
+            # 2. Title-based match
+            # 3. PDF Book's study_info
+            filename_study = filename_map.get(filename, {})
+            title_study = studied_map.get(normalized, {})
             book_study = info.get('study_info', {})
-            is_studied = bool(study_info) or book_study.get('studied', False)
-            studied_by = study_info.get('actors', []) or book_study.get('studied_by', [])
+            
+            is_studied = bool(filename_study) or bool(title_study) or book_study.get('studied', False)
+            
+            # Merge study info from all sources
+            studied_by = list(set(
+                filename_study.get('actors', []) + 
+                title_study.get('actors', []) + 
+                book_study.get('studied_by', [])
+            ))
+            study_count = max(
+                filename_study.get('study_count', 0),
+                title_study.get('study_count', 0),
+                book_study.get('study_count', 0)
+            )
+            last_studied = max(
+                filename_study.get('last_studied', ''),
+                title_study.get('last_studied', ''),
+                book_study.get('last_studied', '')
+            )
+            topics = list(set(
+                filename_study.get('topics', []) +
+                title_study.get('topics', []) +
+                book_study.get('topics', [])
+            ))
             
             pdfs.append({
                 'filename': filename,
@@ -263,9 +436,9 @@ def api_pdf_cache_list():
                 # Study status
                 'studied': is_studied,
                 'studied_by': studied_by,
-                'study_count': study_info.get('study_count', 0) or book_study.get('study_count', 0),
-                'last_studied': study_info.get('last_studied', '') or book_study.get('last_studied', ''),
-                'study_topics': study_info.get('topics', []) or book_study.get('topics', [])
+                'study_count': study_count,
+                'last_studied': last_studied,
+                'study_topics': topics
             })
         
         # Sort by title
