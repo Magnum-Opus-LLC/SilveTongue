@@ -417,6 +417,56 @@ class PDFBook:
         
         return stats
     
+    def _get_studied_filenames(self) -> set:
+        """Get set of PDF filenames that have been studied (before cleanup).
+        
+        This scans cognitive loops to find PDFs that should NOT be deleted.
+        """
+        studied_filenames = set()
+        array_dir = get_array_dir()
+        actors_dir = array_dir / 'actors'
+        
+        if not actors_dir.exists():
+            return studied_filenames
+        
+        for actor_dir in actors_dir.iterdir():
+            if not actor_dir.is_dir() or actor_dir.name.startswith('.'):
+                continue
+            
+            actor_name = actor_dir.name
+            loops_dir = array_dir / 'data' / actor_name / 'cognitive_loops'
+            
+            if not loops_dir.exists():
+                continue
+            
+            for loop_file in loops_dir.glob('loop_*.json'):
+                try:
+                    with open(loop_file, 'r') as f:
+                        data = json.load(f)
+                    
+                    state = data.get('state', {})
+                    
+                    # Check studied_papers for file_path
+                    for p in state.get('studied_papers', []):
+                        sr = p.get('study_result', {})
+                        if sr:
+                            sr_paper = sr.get('paper', {})
+                            if sr_paper:
+                                fp = sr_paper.get('file_path', '')
+                                if fp:
+                                    studied_filenames.add(Path(fp).name)
+                    
+                    # Check knowledge_bits for source_file
+                    for kb in state.get('knowledge_bits', []):
+                        sf = kb.get('source_file', '')
+                        if sf and sf.endswith('.pdf'):
+                            studied_filenames.add(Path(sf).name)
+                            
+                except Exception:
+                    pass
+        
+        return studied_filenames
+    
     def _load_study_info(self):
         """Load study information from all actors' cognitive loops and learning sessions."""
         array_dir = get_array_dir()

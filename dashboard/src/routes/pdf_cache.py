@@ -144,14 +144,31 @@ def api_pdf_cache_rebuild():
     import threading
     from dashboard.utils import active_loops
     
-    data = request.json or {}
+    # Handle both JSON and form data
+    if request.is_json:
+        data = request.json or {}
+    else:
+        data = request.form.to_dict() if request.form else {}
+        # Also check query params
+        if not data:
+            data = request.args.to_dict()
+    
     background = data.get('background', False)
     cleanup = data.get('cleanup', False)
+    
+    # Convert string 'true'/'false' to bool (from form/query params)
+    if isinstance(background, str):
+        background = background.lower() == 'true'
+    if isinstance(cleanup, str):
+        cleanup = cleanup.lower() == 'true'
     
     # Warn if learning is in progress
     if active_loops:
         active_actors = list(active_loops.keys())
-        if not data.get('force', False):
+        force = data.get('force', False)
+        if isinstance(force, str):
+            force = force.lower() == 'true'
+        if not force:
             return jsonify({
                 'warning': f'Learning in progress for: {active_actors}. PDF scanning may interfere. Use force=true to proceed anyway.',
                 'active_loops': active_actors
@@ -176,6 +193,7 @@ def api_pdf_cache_rebuild():
                 'invalid_pdfs': result.get('invalid', 0),
                 'duplicates': result.get('duplicates', 0),
                 'deleted': result.get('deleted', 0),
+                'protected': result.get('protected', 0),
                 'cleanup_enabled': cleanup
             }
         except Exception as e:
