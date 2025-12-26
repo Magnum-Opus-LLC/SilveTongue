@@ -11,6 +11,10 @@ from ..pdf_stock import (
     get_pdf_stock, rebuild_pdf_stock, find_pdf_in_stock,
     clear_pdf_stock_cache, normalize_title
 )
+from ..pdf_book import (
+    get_pdf_book, rebuild_pdf_book, get_pdf_book_stats,
+    find_pdf, get_all_pdfs, clear_pdf_book_cache
+)
 
 pdf_cache_bp = Blueprint('pdf_cache', __name__)
 
@@ -84,27 +88,24 @@ def get_all_studied_papers():
 
 @pdf_cache_bp.route('/api/pdf-cache/stats')
 def api_pdf_cache_stats():
-    """Get statistics about the PDF cache from the stock index."""
+    """Get statistics about the PDF cache - uses PDF Book for validation."""
     try:
-        stock = get_pdf_stock()
-        studied_map = get_all_studied_papers()
+        # Use PDF Book (has validation stats)
+        book = get_pdf_book()
+        book.load()
+        stats = book.get_stats()
         
-        # Count how many cached PDFs have been studied
-        studied_count = 0
-        for filename, info in stock.get('pdfs', {}).items():
-            normalized = info.get('normalized_title', '')
-            if normalized in studied_map:
-                studied_count += 1
-
         return jsonify({
             'exists': True,
             'path': str(get_pdf_cache_dir()),
-            'total_pdfs': stock.get('total_count', 0),
-            'total_size_mb': stock.get('total_size_mb', 0),
-            'indexed_titles': len(stock.get('title_index', {})),
-            'studied_count': studied_count,
-            'not_studied_count': stock.get('total_count', 0) - studied_count,
-            'updated_at': stock.get('updated_at')
+            'total_pdfs': stats.get('total_pdfs', 0),
+            'valid_pdfs': stats.get('valid_pdfs', 0),
+            'invalid_pdfs': stats.get('invalid_pdfs', 0),
+            'duplicates': stats.get('duplicates', 0),
+            'total_size_mb': stats.get('total_size_mb', 0),
+            'studied_count': stats.get('studied_pdfs', 0),
+            'not_studied_count': stats.get('valid_pdfs', 0) - stats.get('studied_pdfs', 0) - stats.get('duplicates', 0),
+            'updated_at': book._data.get('updated_at')
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -122,17 +123,20 @@ def api_pdf_stock():
 
 @pdf_cache_bp.route('/api/pdf-cache/rebuild', methods=['POST'])
 def api_pdf_cache_rebuild():
-    """Rebuild the PDF stock index by scanning the cache directory."""
+    """Rebuild the PDF index with validation and duplicate detection."""
     try:
-        stock = rebuild_pdf_stock()
-        # Clear the in-memory cache to force reload
+        # Use PDF Book (includes validation)
+        result = rebuild_pdf_book(validate=True, detect_duplicates=True)
+        
+        # Also clear old pdf_stock cache
         clear_pdf_stock_cache()
-
+        
         return jsonify({
             'success': True,
-            'total_pdfs': stock.get('total_count', 0),
-            'total_size_mb': stock.get('total_size_mb', 0),
-            'indexed_titles': len(stock.get('title_index', {}))
+            'total_pdfs': result.get('total', 0),
+            'valid_pdfs': result.get('valid', 0),
+            'invalid_pdfs': result.get('invalid', 0),
+            'duplicates': result.get('duplicates', 0)
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -140,42 +144,59 @@ def api_pdf_cache_rebuild():
 
 @pdf_cache_bp.route('/api/pdf-cache/list')
 def api_pdf_cache_list():
-    """List all PDFs in the cache from the stock index with study status."""
+    """List all valid, unique PDFs with study status (filters invalid/duplicates)."""
     try:
-        stock = get_pdf_stock()
+        # Use PDF Book (has validation info)
+        book = get_pdf_book()
+        book.load()
         
         # Get studied papers map
         studied_map = get_all_studied_papers()
-
+        
         pdfs = []
-        for filename, info in stock.get('pdfs', {}).items():
+        for filename, info in book._data.get('pdfs', {}).items():
+            # Skip invalid PDFs
+            if info.get('status') != 'valid':
+                continue
+            # Skip duplicates
+            if info.get('is_duplicate'):
+                continue
+                
             normalized = info.get('normalized_title', '')
             study_info = studied_map.get(normalized, {})
             
+            # Also check study_info from PDF Book
+            book_study = info.get('study_info', {})
+            is_studied = bool(study_info) or book_study.get('studied', False)
+            studied_by = study_info.get('actors', []) or book_study.get('studied_by', [])
+            
             pdfs.append({
                 'filename': filename,
-                'title': info.get('original_title', ''),
+                'title': info.get('title', ''),
                 'normalized_title': normalized,
                 'size_mb': info.get('size_mb', 0),
-                'references': info.get('references', []),
+                'status': info.get('status', 'unknown'),
                 # Study status
-                'studied': bool(study_info),
-                'studied_by': study_info.get('actors', []),
-                'study_count': study_info.get('study_count', 0),
-                'last_studied': study_info.get('last_studied', ''),
-                'study_topics': study_info.get('topics', [])
+                'studied': is_studied,
+                'studied_by': studied_by,
+                'study_count': study_info.get('study_count', 0) or book_study.get('study_count', 0),
+                'last_studied': study_info.get('last_studied', '') or book_study.get('last_studied', ''),
+                'study_topics': study_info.get('topics', []) or book_study.get('topics', [])
             })
-
+        
         # Sort by title
         pdfs.sort(key=lambda x: x.get('title', '').lower())
-
-        # Count studied vs not studied
+        
+        # Get stats from PDF Book
+        stats = book.get_stats()
         studied_count = sum(1 for p in pdfs if p['studied'])
-
+        
         return jsonify({
             'total': len(pdfs),
             'studied_count': studied_count,
             'not_studied_count': len(pdfs) - studied_count,
+            'invalid_count': stats.get('invalid_pdfs', 0),
+            'duplicate_count': stats.get('duplicates', 0),
             'pdfs': pdfs
         })
     except Exception as e:
@@ -220,3 +241,309 @@ def api_serve_pdf(filename):
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ==================== PDF Book API Routes ====================
+# These routes use the new PDF Book system for validation,
+# duplicate detection, and comprehensive PDF management.
+
+
+@pdf_cache_bp.route('/api/pdf-book/stats')
+def api_pdf_book_stats():
+    """Get comprehensive statistics from PDF Book including invalid/duplicate counts."""
+    try:
+        book = get_pdf_book()
+        book.load()
+        stats = book.get_stats()
+        
+        return jsonify({
+            'success': True,
+            'stats': stats,
+            'book_exists': book.book_path.exists(),
+            'book_path': str(book.book_path)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-book/rebuild', methods=['POST'])
+def api_pdf_book_rebuild():
+    """
+    Rebuild the PDF Book by scanning and validating all PDFs.
+    This detects invalid files, duplicates, and updates study info.
+    """
+    try:
+        data = request.get_json() or {}
+        validate = data.get('validate', True)
+        detect_duplicates = data.get('detect_duplicates', True)
+        
+        result = rebuild_pdf_book(validate=validate, 
+                                   detect_duplicates=detect_duplicates)
+        
+        # Clear old pdf_stock cache too
+        clear_pdf_stock_cache()
+        
+        return jsonify({
+            'success': True,
+            'result': result
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-book/list')
+def api_pdf_book_list():
+    """
+    List all PDFs from PDF Book with validation status and study info.
+    Query params:
+        - include_invalid: bool (default false)
+        - include_duplicates: bool (default false)
+        - status_filter: 'valid' | 'invalid' | 'duplicate' | 'studied' | 'not_studied'
+    """
+    try:
+        include_invalid = request.args.get('include_invalid', 'false').lower() == 'true'
+        include_duplicates = request.args.get('include_duplicates', 'false').lower() == 'true'
+        status_filter = request.args.get('status_filter', '')
+        
+        book = get_pdf_book()
+        
+        # Get base list
+        if status_filter == 'invalid':
+            pdfs = book.get_invalid_pdfs()
+        elif status_filter == 'duplicate':
+            pdfs = book.get_duplicates()
+        else:
+            pdfs = book.get_all(
+                include_invalid=include_invalid or status_filter == 'invalid',
+                include_duplicates=include_duplicates or status_filter == 'duplicate'
+            )
+        
+        # Additional filtering
+        if status_filter == 'studied':
+            pdfs = [p for p in pdfs if p.get('study_info', {}).get('studied')]
+        elif status_filter == 'not_studied':
+            pdfs = [p for p in pdfs 
+                    if not p.get('study_info', {}).get('studied') 
+                    and p.get('status') == 'valid'
+                    and not p.get('is_duplicate')]
+        
+        # Get stats
+        stats = book.get_stats()
+        
+        return jsonify({
+            'success': True,
+            'total': len(pdfs),
+            'stats': stats,
+            'pdfs': pdfs
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-book/invalid')
+def api_pdf_book_invalid():
+    """Get list of invalid/corrupted PDFs."""
+    try:
+        book = get_pdf_book()
+        invalid_pdfs = book.get_invalid_pdfs()
+        
+        return jsonify({
+            'success': True,
+            'count': len(invalid_pdfs),
+            'pdfs': invalid_pdfs
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-book/duplicates')
+def api_pdf_book_duplicates():
+    """Get list of duplicate PDFs."""
+    try:
+        book = get_pdf_book()
+        duplicates = book.get_duplicates()
+        
+        # Group by original file for easier display
+        grouped = {}
+        for dup in duplicates:
+            original = dup.get('duplicate_of', 'unknown')
+            if original not in grouped:
+                grouped[original] = {
+                    'original': original,
+                    'duplicates': []
+                }
+            grouped[original]['duplicates'].append({
+                'filename': dup.get('filename'),
+                'size_mb': dup.get('size_mb'),
+                'title': dup.get('title')
+            })
+        
+        return jsonify({
+            'success': True,
+            'count': len(duplicates),
+            'grouped': list(grouped.values()),
+            'pdfs': duplicates
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-book/search')
+def api_pdf_book_search():
+    """Search for a PDF by title using PDF Book (with fuzzy matching)."""
+    try:
+        title = request.args.get('title', '')
+        if not title:
+            return jsonify({'success': False, 'error': 'title parameter required'}), 400
+        
+        result = find_pdf(title)
+        
+        if result:
+            return jsonify({
+                'success': True,
+                'found': True,
+                'pdf': result
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'found': False,
+                'pdf': None
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-book/cleanup/invalid', methods=['POST'])
+def api_pdf_book_cleanup_invalid():
+    """
+    Remove invalid PDFs from cache.
+    POST body: { "dry_run": true|false }
+    """
+    try:
+        data = request.get_json() or {}
+        dry_run = data.get('dry_run', True)
+        
+        book = get_pdf_book()
+        removed = book.remove_invalid(dry_run=dry_run)
+        
+        action = "Would remove" if dry_run else "Removed"
+        
+        return jsonify({
+            'success': True,
+            'dry_run': dry_run,
+            'message': f"{action} {len(removed)} invalid PDFs",
+            'removed': removed
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-book/cleanup/duplicates', methods=['POST'])
+def api_pdf_book_cleanup_duplicates():
+    """
+    Remove duplicate PDFs from cache.
+    POST body: { "dry_run": true|false }
+    """
+    try:
+        data = request.get_json() or {}
+        dry_run = data.get('dry_run', True)
+        
+        book = get_pdf_book()
+        removed = book.remove_duplicates(dry_run=dry_run)
+        
+        action = "Would remove" if dry_run else "Removed"
+        
+        return jsonify({
+            'success': True,
+            'dry_run': dry_run,
+            'message': f"{action} {len(removed)} duplicate PDFs",
+            'removed': removed
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-book/pdf/<filename>')
+def api_pdf_book_get_pdf(filename):
+    """Get detailed info about a specific PDF from PDF Book."""
+    try:
+        book = get_pdf_book()
+        pdf_info = book.get_pdf(filename)
+        
+        if not pdf_info:
+            return jsonify({
+                'success': False, 
+                'error': 'PDF not found in book'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'pdf': pdf_info
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-book/pdf/<filename>/metadata', methods=['POST'])
+def api_pdf_book_update_metadata(filename):
+    """
+    Update metadata for a PDF.
+    POST body: { "authors": str, "source": str, "url": str, "abstract": str }
+    """
+    try:
+        data = request.get_json() or {}
+        
+        book = get_pdf_book()
+        success = book.update_metadata(filename, data)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Metadata updated'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'PDF not found'
+            }), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-book/pdf/<filename>/mark-studied', methods=['POST'])
+def api_pdf_book_mark_studied(filename):
+    """
+    Mark a PDF as studied by an actor.
+    POST body: { "actor": str, "topic": str (optional) }
+    """
+    try:
+        data = request.get_json() or {}
+        actor = data.get('actor', '')
+        topic = data.get('topic', '')
+        
+        if not actor:
+            return jsonify({
+                'success': False, 
+                'error': 'actor parameter required'
+            }), 400
+        
+        book = get_pdf_book()
+        success = book.mark_studied(filename, actor, topic)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Marked as studied by {actor}'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'PDF not found'
+            }), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

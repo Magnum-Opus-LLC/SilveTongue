@@ -4,7 +4,7 @@ Actor creation routes for Silvertongue Dashboard.
 
 from flask import Blueprint, jsonify, request
 
-from ..utils import get_array_dir, PROJECT_ROOT
+from ..utils import get_array_dir, PROJECT_ROOT, import_project_module
 
 actor_creation_bp = Blueprint('actor_creation', __name__)
 
@@ -30,7 +30,9 @@ def api_create_actor():
         return jsonify({'error': f'Actor "{actor_name}" already exists'}), 400
 
     try:
-        from src.utils.actor_generator import generate_actor_profile, save_actor_profile
+        actor_generator = import_project_module('src.utils.actor_generator')
+        generate_actor_profile = actor_generator.generate_actor_profile
+        save_actor_profile = actor_generator.save_actor_profile
 
         # Generate profile from description
         profile = generate_actor_profile(description)
@@ -78,7 +80,8 @@ def api_create_actor_manual():
         return jsonify({'error': f'Actor "{actor_name}" already exists'}), 400
 
     try:
-        from src.utils.actor_generator import save_actor_profile
+        actor_generator = import_project_module('src.utils.actor_generator')
+        save_actor_profile = actor_generator.save_actor_profile
 
         # Helper to convert string to list (split by newlines)
         def to_list(val):

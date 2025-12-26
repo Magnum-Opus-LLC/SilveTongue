@@ -18,8 +18,17 @@ import requests
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
+dashboard_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(dashboard_root))
 
+# Import PDF Book for validation
+try:
+    from src.pdf_book import get_pdf_book, rebuild_pdf_book
+    PDF_BOOK_AVAILABLE = True
+except ImportError:
+    PDF_BOOK_AVAILABLE = False
+    print("[Warning] PDF Book not available, validation disabled")
 
 app = Flask(__name__)
 
@@ -1010,6 +1019,26 @@ def get_all_studied_papers():
 def api_pdf_cache_stats():
     """Get statistics about the PDF cache from the stock index."""
     try:
+        # Use PDF Book if available (has validation stats)
+        if PDF_BOOK_AVAILABLE:
+            book = get_pdf_book()
+            book.load()
+            stats = book.get_stats()
+            
+            return jsonify({
+                'exists': True,
+                'path': str(get_pdf_cache_dir()),
+                'total_pdfs': stats.get('total_pdfs', 0),
+                'valid_pdfs': stats.get('valid_pdfs', 0),
+                'invalid_pdfs': stats.get('invalid_pdfs', 0),
+                'duplicates': stats.get('duplicates', 0),
+                'total_size_mb': stats.get('total_size_mb', 0),
+                'studied_count': stats.get('studied_pdfs', 0),
+                'not_studied_count': stats.get('valid_pdfs', 0) - stats.get('studied_pdfs', 0) - stats.get('duplicates', 0),
+                'updated_at': book._data.get('updated_at')
+            })
+        
+        # Fallback to old pdf_stock method
         stock = get_pdf_stock()
         studied_map = get_all_studied_papers()
         
@@ -1048,6 +1077,18 @@ def api_pdf_stock():
 def api_pdf_cache_rebuild():
     """Rebuild the PDF stock index by scanning the cache directory."""
     try:
+        # Use PDF Book if available (includes validation)
+        if PDF_BOOK_AVAILABLE:
+            result = rebuild_pdf_book(validate=True, detect_duplicates=True)
+            return jsonify({
+                'success': True,
+                'total_pdfs': result.get('total', 0),
+                'valid_pdfs': result.get('valid', 0),
+                'invalid_pdfs': result.get('invalid', 0),
+                'duplicates': result.get('duplicates', 0)
+            })
+        
+        # Fallback to old method
         stock = rebuild_pdf_stock()
         # Clear the in-memory cache to force reload
         _pdf_stock_cache['stock'] = stock
@@ -1067,6 +1108,62 @@ def api_pdf_cache_rebuild():
 def api_pdf_cache_list():
     """List all PDFs in the cache from the stock index with study status."""
     try:
+        # Check if we should use PDF Book (has validation info)
+        if PDF_BOOK_AVAILABLE:
+            book = get_pdf_book()
+            book.load()
+            
+            # Get studied papers map
+            studied_map = get_all_studied_papers()
+            
+            pdfs = []
+            for filename, info in book._data.get('pdfs', {}).items():
+                # Skip invalid PDFs
+                if info.get('status') != 'valid':
+                    continue
+                # Skip duplicates
+                if info.get('is_duplicate'):
+                    continue
+                    
+                normalized = info.get('normalized_title', '')
+                study_info = studied_map.get(normalized, {})
+                
+                # Also check study_info from PDF Book
+                book_study = info.get('study_info', {})
+                is_studied = bool(study_info) or book_study.get('studied', False)
+                studied_by = study_info.get('actors', []) or book_study.get('studied_by', [])
+                
+                pdfs.append({
+                    'filename': filename,
+                    'title': info.get('title', ''),
+                    'normalized_title': normalized,
+                    'size_mb': info.get('size_mb', 0),
+                    'status': info.get('status', 'unknown'),
+                    # Study status
+                    'studied': is_studied,
+                    'studied_by': studied_by,
+                    'study_count': study_info.get('study_count', 0) or book_study.get('study_count', 0),
+                    'last_studied': study_info.get('last_studied', '') or book_study.get('last_studied', ''),
+                    'study_topics': study_info.get('topics', []) or book_study.get('topics', [])
+                })
+            
+            # Sort by title
+            pdfs.sort(key=lambda x: x.get('title', '').lower())
+            
+            # Get stats from PDF Book
+            stats = book.get_stats()
+            studied_count = sum(1 for p in pdfs if p['studied'])
+            
+            return jsonify({
+                'total': len(pdfs),
+                'studied_count': studied_count,
+                'not_studied_count': len(pdfs) - studied_count,
+                'invalid_count': stats.get('invalid_pdfs', 0),
+                'duplicate_count': stats.get('duplicates', 0),
+                'pdfs': pdfs
+            })
+        
+        # Fallback to old pdf_stock method (no validation)
         stock = get_pdf_stock()
         
         # Get studied papers map

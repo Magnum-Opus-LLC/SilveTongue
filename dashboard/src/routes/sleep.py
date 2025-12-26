@@ -5,7 +5,7 @@ Sleep & training data routes for Silvertongue Dashboard.
 import json
 from flask import Blueprint, jsonify, request
 
-from ..utils import get_array_dir
+from ..utils import get_array_dir, import_project_module
 
 sleep_bp = Blueprint('sleep', __name__)
 
@@ -25,7 +25,8 @@ def api_actor_sleep(actor_name):
         adapter: str - LoRA adapter to use for LLM calls (empty = base model)
     """
     try:
-        from src.actions.sleep_processor import SleepProcessor
+        sleep_processor = import_project_module('src.actions.sleep_processor')
+        SleepProcessor = sleep_processor.SleepProcessor
 
         data = request.json or {}
         # Default to light sleep (incremental)
@@ -127,7 +128,8 @@ def api_merge_datasets(actor_name):
     }
     """
     try:
-        from src.actions.sleep_processor import merge_datasets
+        sleep_processor = import_project_module('src.actions.sleep_processor')
+        merge_datasets = sleep_processor.merge_datasets
 
         data = request.json or {}
         dataset_files = data.get('dataset_files', [])

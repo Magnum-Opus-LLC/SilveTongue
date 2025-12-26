@@ -7,13 +7,18 @@ Usage:
     
 Or with custom port:
     python run_dashboard.py --port 5050
+    
+Use legacy app.py:
+    python run_dashboard.py --legacy
 """
 
 import argparse
 import webbrowser
 import threading
 import time
-from app import app
+
+# Default to app_dev.py (modular version with PDF Book)
+from app_dev import app
 
 
 def open_browser(port):

@@ -5,12 +5,53 @@ Configuration and utility functions for the Silvertongue Dashboard.
 import json
 import yaml
 import queue
+import sys
+import importlib.util
 from pathlib import Path
 from datetime import datetime
 
 # Project paths
 DASHBOARD_ROOT = Path(__file__).parent.parent
 PROJECT_ROOT = DASHBOARD_ROOT.parent
+
+
+def import_project_module(module_name: str):
+    """
+    Import a module from the project's src directory, bypassing dashboard's src.
+    
+    Usage:
+        chat_utils = import_project_module('src.utils.chat_utils')
+        get_chat_completion = chat_utils.get_chat_completion
+    """
+    # Check if already in sys.modules with proper path
+    if module_name in sys.modules:
+        module = sys.modules[module_name]
+        # Verify it's from project root, not dashboard
+        if hasattr(module, '__file__') and module.__file__:
+            if 'dashboard' not in str(module.__file__):
+                return module
+    
+    # Build the file path
+    parts = module_name.split('.')
+    file_path = PROJECT_ROOT / '/'.join(parts)
+    
+    if file_path.is_dir():
+        file_path = file_path / '__init__.py'
+    else:
+        file_path = file_path.with_suffix('.py')
+    
+    if not file_path.exists():
+        raise ImportError(f"Cannot find module {module_name} at {file_path}")
+    
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    module = importlib.util.module_from_spec(spec)
+    
+    # Add to sys.modules before exec to handle circular imports
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    
+    return module
+
 
 # Global state for running loops
 active_loops = {}

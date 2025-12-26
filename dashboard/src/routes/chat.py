@@ -1,3 +1,4 @@
+# filepath: /Users/ruihe/mnt/silvertongueArray/silvertongue/dashboard/src/routes/chat.py
 """
 Chat routes for the Silvertongue Dashboard.
 
@@ -8,7 +9,7 @@ import json
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
-from ..utils import get_array_dir
+from ..utils import get_array_dir, import_project_module
 from ..actors import get_actor_details
 
 chat_bp = Blueprint('chat', __name__)
@@ -21,7 +22,6 @@ def _save_chat_turn(actor_name: str, user_msg: str, assistant_msg: str):
         chat_dir = array_dir / 'data' / actor_name / 'chat_history'
         chat_dir.mkdir(parents=True, exist_ok=True)
 
-        # Load or create today's chat file
         today = datetime.now().strftime('%Y%m%d')
         chat_file = chat_dir / f'chat_{today}.json'
 
@@ -35,14 +35,12 @@ def _save_chat_turn(actor_name: str, user_msg: str, assistant_msg: str):
                 'turns': []
             }
 
-        # Add turn
         data['turns'].append({
             'timestamp': datetime.now().isoformat(),
             'user': user_msg,
             'assistant': assistant_msg
         })
 
-        # Save
         with open(chat_file, 'w') as f:
             json.dump(data, f, indent=2)
     except Exception as e:
@@ -54,15 +52,14 @@ def api_chat(actor_name):
     """Chat with an actor - lightweight cognitive mode for chat only."""
     data = request.json
     message = data.get('message', '')
-    images = data.get('images', [])  # Array of {data: base64, type: mime}
+    images = data.get('images', [])
     history = data.get('history', [])
     use_cognitive = data.get('use_cognitive', True)
-    adapter = data.get('adapter', '')  # LoRA adapter name (empty = base model)
+    adapter = data.get('adapter', '')
 
     if not message and not images:
         return jsonify({'error': 'No message or images provided'}), 400
 
-    # Clean history - only keep role and content
     clean_history = [
         {"role": msg.get("role"), "content": msg.get("content")}
         for msg in history
@@ -70,12 +67,17 @@ def api_chat(actor_name):
     ]
 
     try:
-        from src.utils.chat_utils import get_chat_completion
-        from src.utils.knowledge_base import KnowledgeBase
-        from src.thoughts.subconscious import SilvertongueSubconscious
-        from src.thoughts.conscious import SilvertongueConscious
+        # Import from project root's src (not dashboard's src)
+        chat_utils = import_project_module('src.utils.chat_utils')
+        knowledge_base_mod = import_project_module('src.utils.knowledge_base')
+        subconscious_mod = import_project_module('src.thoughts.subconscious')
+        conscious_mod = import_project_module('src.thoughts.conscious')
+        
+        get_chat_completion = chat_utils.get_chat_completion
+        KnowledgeBase = knowledge_base_mod.KnowledgeBase
+        SilvertongueSubconscious = subconscious_mod.SilvertongueSubconscious
+        SilvertongueConscious = conscious_mod.SilvertongueConscious
 
-        # Initialize knowledge base and thought processors
         kb = KnowledgeBase(actor_name)
         subconscious = SilvertongueSubconscious(kb)
         conscious = SilvertongueConscious(kb)
@@ -83,15 +85,9 @@ def api_chat(actor_name):
         details = get_actor_details(actor_name)
 
         if use_cognitive:
-            # PROPER COGNITIVE MODE: Use subconscious -> conscious pipeline
-
-            # Step 1: Subconscious analysis
             analysis = subconscious.analyze_request(message)
-
-            # Step 2: Conscious processing with full context
             conscious_prompt = conscious.construct_conscious_prompt(analysis)
 
-            # Step 3: Build final response with full knowledge context
             system_prompt = f"""{conscious_prompt}
 
 You are responding to a chat message. Draw upon:
@@ -106,7 +102,6 @@ Provide a thoughtful, helpful response that reflects your knowledge and characte
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(clean_history[-10:])
 
-            # Add user message with images if present
             if images and len(images) > 0:
                 user_content = []
                 if message:
@@ -124,10 +119,8 @@ Provide a thoughtful, helpful response that reflects your knowledge and characte
             response = get_chat_completion(
                 messages, temperature=0.7, model_override=model_override)
 
-            # Save chat history
             _save_chat_turn(actor_name, message, response)
 
-            # Build thought history for UI
             thought_history = [
                 {"step": "Request Analysis",
                     "content": f"Analyzing request in domain: {analysis.get('domain', 'General')}"},
@@ -172,7 +165,6 @@ Provide a thoughtful, helpful response that reflects your knowledge and characte
                 'thought_history': thought_history
             })
         else:
-            # Non-cognitive mode
             analysis = subconscious.analyze_request(message)
 
             system_prompt = f"""You are {actor_name}.

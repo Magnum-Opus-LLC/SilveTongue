@@ -9,7 +9,7 @@ import yaml
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
-from ..utils import get_array_dir, add_to_yaml_list
+from ..utils import get_array_dir, add_to_yaml_list, import_project_module
 from ..actors import (
     get_actor_root, get_actor_details, get_actor_knowledge_paths
 )
@@ -97,7 +97,8 @@ def api_expand_knowledge(actor_name):
         return jsonify({'error': 'No content provided'}), 400
 
     try:
-        from src.utils.chat_utils import get_chat_completion
+        chat_utils = import_project_module('src.utils.chat_utils')
+        get_chat_completion = chat_utils.get_chat_completion
 
         type_labels = {
             'values': 'value',

@@ -8,7 +8,7 @@ import threading
 from datetime import datetime
 from flask import Blueprint, jsonify, request, Response
 
-from ..utils import get_array_dir, active_loops, loop_outputs
+from ..utils import get_array_dir, active_loops, loop_outputs, import_project_module
 from ..actors import get_actor_root
 from ..pdf_stock import find_cached_pdf
 
@@ -248,7 +248,8 @@ def api_start_learning(actor_name):
     def run_loop():
         try:
             # Lazy import
-            from src.actions.cognitive_loop import CognitiveLoop
+            cognitive_loop = import_project_module('src.actions.cognitive_loop')
+            CognitiveLoop = cognitive_loop.CognitiveLoop
 
             loop = CognitiveLoop(actor_name, verbose=True)
             loop.configure(
