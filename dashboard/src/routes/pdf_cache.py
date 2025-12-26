@@ -3,15 +3,16 @@ PDF cache routes for Silvertongue Dashboard.
 """
 
 import json
+from datetime import datetime
 from pathlib import Path
 from flask import Blueprint, jsonify, request, send_file
 
-from ..utils import get_pdf_cache_dir, get_array_dir
-from ..pdf_stock import (
+from dashboard.utils import get_pdf_cache_dir, get_array_dir
+from dashboard.pdf_stock import (
     get_pdf_stock, rebuild_pdf_stock, find_pdf_in_stock,
     clear_pdf_stock_cache, normalize_title
 )
-from ..pdf_book import (
+from dashboard.pdf_book import (
     get_pdf_book, rebuild_pdf_book, get_pdf_book_stats,
     find_pdf, get_all_pdfs, clear_pdf_book_cache
 )
@@ -121,25 +122,90 @@ def api_pdf_stock():
         return jsonify({'error': str(e)}), 500
 
 
+# Track rebuild status
+_rebuild_status = {
+    'in_progress': False,
+    'started_at': None,
+    'result': None
+}
+
+
 @pdf_cache_bp.route('/api/pdf-cache/rebuild', methods=['POST'])
 def api_pdf_cache_rebuild():
-    """Rebuild the PDF index with validation and duplicate detection."""
-    try:
-        # Use PDF Book (includes validation)
-        result = rebuild_pdf_book(validate=True, detect_duplicates=True)
-        
-        # Also clear old pdf_stock cache
-        clear_pdf_stock_cache()
-        
+    """Rebuild the PDF index with validation and duplicate detection.
+    
+    OPTIONS:
+    - cleanup: true to delete invalid and duplicate PDFs from disk
+    - background: true for non-blocking rebuild
+    - force: true to proceed even if learning is in progress
+    
+    WARNING: This can interrupt learning processes if run concurrently.
+    """
+    import threading
+    from dashboard.utils import active_loops
+    
+    data = request.json or {}
+    background = data.get('background', False)
+    cleanup = data.get('cleanup', False)
+    
+    # Warn if learning is in progress
+    if active_loops:
+        active_actors = list(active_loops.keys())
+        if not data.get('force', False):
+            return jsonify({
+                'warning': f'Learning in progress for: {active_actors}. PDF scanning may interfere. Use force=true to proceed anyway.',
+                'active_loops': active_actors
+            }), 409  # Conflict
+    
+    if _rebuild_status['in_progress']:
         return jsonify({
-            'success': True,
-            'total_pdfs': result.get('total', 0),
-            'valid_pdfs': result.get('valid', 0),
-            'invalid_pdfs': result.get('invalid', 0),
-            'duplicates': result.get('duplicates', 0)
+            'status': 'already_running',
+            'started_at': _rebuild_status['started_at']
         })
+    
+    def do_rebuild():
+        _rebuild_status['in_progress'] = True
+        _rebuild_status['started_at'] = datetime.now().isoformat()
+        try:
+            result = rebuild_pdf_book(validate=True, detect_duplicates=True, cleanup=cleanup)
+            clear_pdf_stock_cache()
+            _rebuild_status['result'] = {
+                'success': True,
+                'total_pdfs': result.get('total', 0),
+                'valid_pdfs': result.get('valid', 0),
+                'invalid_pdfs': result.get('invalid', 0),
+                'duplicates': result.get('duplicates', 0),
+                'deleted': result.get('deleted', 0),
+                'cleanup_enabled': cleanup
+            }
+        except Exception as e:
+            _rebuild_status['result'] = {'error': str(e)}
+        finally:
+            _rebuild_status['in_progress'] = False
+    
+    if background:
+        threading.Thread(target=do_rebuild, daemon=True).start()
+        return jsonify({
+            'status': 'started',
+            'message': 'Rebuild started in background. Check /api/pdf-cache/rebuild/status for progress.',
+            'cleanup_enabled': cleanup
+        })
+    
+    try:
+        do_rebuild()
+        return jsonify(_rebuild_status['result'])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@pdf_cache_bp.route('/api/pdf-cache/rebuild/status')
+def api_pdf_cache_rebuild_status():
+    """Get the status of a background rebuild."""
+    return jsonify({
+        'in_progress': _rebuild_status['in_progress'],
+        'started_at': _rebuild_status['started_at'],
+        'result': _rebuild_status['result']
+    })
 
 
 @pdf_cache_bp.route('/api/pdf-cache/list')

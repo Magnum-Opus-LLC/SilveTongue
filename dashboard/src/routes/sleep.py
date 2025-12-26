@@ -5,7 +5,7 @@ Sleep & training data routes for Silvertongue Dashboard.
 import json
 from flask import Blueprint, jsonify, request
 
-from ..utils import get_array_dir, import_project_module
+from dashboard.utils import get_array_dir, import_project_module
 
 sleep_bp = Blueprint('sleep', __name__)
 

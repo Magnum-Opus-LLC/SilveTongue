@@ -8,9 +8,9 @@ import threading
 from datetime import datetime
 from flask import Blueprint, jsonify, request, Response
 
-from ..utils import get_array_dir, active_loops, loop_outputs, import_project_module
-from ..actors import get_actor_root
-from ..pdf_stock import find_cached_pdf
+from dashboard.utils import get_array_dir, active_loops, loop_outputs, import_project_module
+from dashboard.actors import get_actor_root
+from dashboard.pdf_stock import find_cached_pdf
 
 learning_bp = Blueprint('learning', __name__)
 

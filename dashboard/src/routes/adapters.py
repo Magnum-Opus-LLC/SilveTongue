@@ -8,7 +8,7 @@ import shutil
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
-from ..utils import get_lora_adapters_dir
+from dashboard.utils import get_lora_adapters_dir
 
 adapters_bp = Blueprint('adapters', __name__)
 

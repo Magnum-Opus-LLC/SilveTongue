@@ -9,8 +9,8 @@ import yaml
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
-from ..utils import get_array_dir, add_to_yaml_list, import_project_module
-from ..actors import (
+from dashboard.utils import get_array_dir, add_to_yaml_list, import_project_module
+from dashboard.actors import (
     get_actor_root, get_actor_details, get_actor_knowledge_paths
 )
 

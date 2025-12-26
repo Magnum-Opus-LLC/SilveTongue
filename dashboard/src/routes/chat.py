@@ -9,8 +9,8 @@ import json
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
-from ..utils import get_array_dir, import_project_module
-from ..actors import get_actor_details
+from dashboard.utils import get_array_dir, import_project_module
+from dashboard.actors import get_actor_details
 
 chat_bp = Blueprint('chat', __name__)
 

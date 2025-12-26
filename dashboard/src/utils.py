@@ -14,43 +14,37 @@ from datetime import datetime
 DASHBOARD_ROOT = Path(__file__).parent.parent
 PROJECT_ROOT = DASHBOARD_ROOT.parent
 
+# Ensure project root is in sys.path BEFORE dashboard for proper imports
+_project_root_str = str(PROJECT_ROOT)
+if _project_root_str not in sys.path:
+    sys.path.insert(0, _project_root_str)
+elif sys.path.index(_project_root_str) > 0:
+    # Move to front if it exists but isn't first
+    sys.path.remove(_project_root_str)
+    sys.path.insert(0, _project_root_str)
+
 
 def import_project_module(module_name: str):
     """
-    Import a module from the project's src directory, bypassing dashboard's src.
+    Import a module from the project's src directory.
+    
+    Since PROJECT_ROOT is now first in sys.path, normal imports should work.
+    This function is kept for explicit imports when needed.
     
     Usage:
-        chat_utils = import_project_module('src.utils.chat_utils')
-        get_chat_completion = chat_utils.get_chat_completion
+        cognitive_loop = import_project_module('src.actions.cognitive_loop')
+        CognitiveLoop = cognitive_loop.CognitiveLoop
     """
-    # Check if already in sys.modules with proper path
+    import importlib
+    
+    # Clear any cached dashboard versions
     if module_name in sys.modules:
         module = sys.modules[module_name]
-        # Verify it's from project root, not dashboard
         if hasattr(module, '__file__') and module.__file__:
-            if 'dashboard' not in str(module.__file__):
-                return module
+            if 'dashboard' in str(module.__file__):
+                del sys.modules[module_name]
     
-    # Build the file path
-    parts = module_name.split('.')
-    file_path = PROJECT_ROOT / '/'.join(parts)
-    
-    if file_path.is_dir():
-        file_path = file_path / '__init__.py'
-    else:
-        file_path = file_path.with_suffix('.py')
-    
-    if not file_path.exists():
-        raise ImportError(f"Cannot find module {module_name} at {file_path}")
-    
-    spec = importlib.util.spec_from_file_location(module_name, file_path)
-    module = importlib.util.module_from_spec(spec)
-    
-    # Add to sys.modules before exec to handle circular imports
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    
-    return module
+    return importlib.import_module(module_name)
 
 
 # Global state for running loops

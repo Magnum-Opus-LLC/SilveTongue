@@ -6,8 +6,8 @@ Handles: /, /api/actors, /api/actor/<name>, /api/config
 
 from flask import Blueprint, render_template, jsonify, request
 
-from ..utils import load_config, save_config, get_array_dir
-from ..actors import get_available_actors, get_actor_details
+from dashboard.utils import load_config, save_config, get_array_dir
+from dashboard.actors import get_available_actors, get_actor_details
 
 core_bp = Blueprint('core', __name__)
 

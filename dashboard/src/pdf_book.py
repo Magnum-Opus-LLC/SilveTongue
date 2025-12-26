@@ -291,25 +291,36 @@ class PDFBook:
         self.save()
         print("[PDF Book] Migrated from v1 to v2 format")
     
-    def rebuild(self, validate: bool = True, detect_duplicates: bool = True) -> dict:
-        """Rebuild the PDF book by scanning the cache directory."""
+    def rebuild(self, validate: bool = True, detect_duplicates: bool = True, 
+                cleanup: bool = False) -> dict:
+        """Rebuild the PDF book by scanning the cache directory.
+        
+        Args:
+            validate: Check if PDFs are readable/valid
+            detect_duplicates: Find duplicate PDFs by content hash
+            cleanup: If True, delete invalid and duplicate PDFs from disk
+        """
         print("[PDF Book] Starting rebuild...")
+        if cleanup:
+            print("[PDF Book] Cleanup mode: will delete invalid and duplicate PDFs")
         
         self._data = self._create_empty_book()
         
         if not self.pdf_cache_dir.exists():
             self.save()
-            return {'total': 0, 'valid': 0, 'invalid': 0, 'duplicates': 0}
+            return {'total': 0, 'valid': 0, 'invalid': 0, 'duplicates': 0, 'deleted': 0}
         
         stats = {
             'total': 0,
             'valid': 0,
             'invalid': 0,
             'duplicates': 0,
-            'scanned': 0
+            'scanned': 0,
+            'deleted': 0
         }
         
         hash_to_filename = {}
+        files_to_delete = []  # Collect files to delete after scan
         
         for pdf_file in self.pdf_cache_dir.glob('*.pdf'):
             stats['scanned'] += 1
@@ -328,6 +339,9 @@ class PDFBook:
                 status = validation['status']
                 if not validation['valid']:
                     stats['invalid'] += 1
+                    if cleanup:
+                        files_to_delete.append(('invalid', pdf_file, filename))
+                        continue  # Don't add to index
                 else:
                     stats['valid'] += 1
             else:
@@ -345,6 +359,9 @@ class PDFBook:
                         is_duplicate = True
                         duplicate_of = hash_to_filename[file_hash]
                         stats['duplicates'] += 1
+                        if cleanup:
+                            files_to_delete.append(('duplicate', pdf_file, filename))
+                            continue  # Don't add to index
                     else:
                         hash_to_filename[file_hash] = filename
                         self._data['hash_index'][file_hash] = filename
@@ -379,69 +396,158 @@ class PDFBook:
             
             stats['total'] += 1
         
+        # Delete files if cleanup mode
+        if cleanup and files_to_delete:
+            print(f"[PDF Book] Deleting {len(files_to_delete)} files...")
+            for reason, pdf_file, filename in files_to_delete:
+                try:
+                    pdf_file.unlink()
+                    stats['deleted'] += 1
+                    print(f"  Deleted ({reason}): {filename}")
+                except Exception as e:
+                    print(f"  Failed to delete {filename}: {e}")
+        
         self._load_study_info()
         self.save()
         
         print(f"[PDF Book] Rebuild complete: {stats['total']} PDFs, "
               f"{stats['valid']} valid, {stats['invalid']} invalid, "
-              f"{stats['duplicates']} duplicates")
+              f"{stats['duplicates']} duplicates" + 
+              (f", {stats['deleted']} deleted" if cleanup else ""))
         
         return stats
     
     def _load_study_info(self):
-        """Load study information from all actors' cognitive loops."""
+        """Load study information from all actors' cognitive loops and learning sessions."""
         array_dir = get_array_dir()
         actors_dir = array_dir / 'actors'
         
         if not actors_dir.exists():
             return
         
+        matched_count = 0
+        unmatched_titles = []
+        
         for actor_dir in actors_dir.iterdir():
             if not actor_dir.is_dir() or actor_dir.name.startswith('.'):
                 continue
             
             actor_name = actor_dir.name
+            
+            # Check cognitive loops
             loops_dir = array_dir / 'data' / actor_name / 'cognitive_loops'
+            if loops_dir.exists():
+                for loop_file in loops_dir.glob('loop_*.json'):
+                    matched, unmatched = self._process_study_file(loop_file, actor_name)
+                    matched_count += matched
+                    unmatched_titles.extend(unmatched)
             
-            if not loops_dir.exists():
-                continue
+            # Also check learning sessions
+            sessions_dir = array_dir / 'data' / actor_name / 'learning_sessions'
+            if sessions_dir.exists():
+                for session_file in sessions_dir.glob('session_*.json'):
+                    matched, unmatched = self._process_study_file(session_file, actor_name)
+                    matched_count += matched
+                    unmatched_titles.extend(unmatched)
+        
+        if matched_count > 0 or unmatched_titles:
+            print(f"[PDF Book] Study info: {matched_count} PDFs matched, {len(unmatched_titles)} papers not found in cache")
+    
+    def _process_study_file(self, file_path: Path, actor_name: str) -> tuple:
+        """Process a study file (loop or session) and update study info."""
+        matched = 0
+        unmatched = []
+        
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
             
-            for loop_file in loops_dir.glob('loop_*.json'):
-                try:
-                    with open(loop_file, 'r') as f:
-                        data = json.load(f)
-                    
-                    state = data.get('state', {})
-                    loop_topic = state.get('topic', 'Unknown')
-                    
-                    for paper_entry in state.get('studied_papers', []):
-                        paper = paper_entry.get('paper', {}) or {}
-                        title = paper.get('title', '')
-                        
-                        if not title:
-                            continue
-                        
-                        pdf_entry = self.find_by_title(title)
-                        if not pdf_entry:
-                            continue
-                        
-                        filename = pdf_entry['filename']
+            state = data.get('state', {})
+            loop_topic = state.get('topic', 'Unknown')
+            
+            # Get studied papers from state
+            studied_papers = state.get('studied_papers', [])
+            
+            # Also check for papers in result if it exists
+            if not studied_papers and 'result' in data:
+                result = data.get('result', {})
+                if isinstance(result, dict):
+                    studied_papers = result.get('studied_papers', [])
+            
+            # Also process knowledge_bits for source_file references
+            knowledge_bits = state.get('knowledge_bits', [])
+            for kb in knowledge_bits:
+                source_file = kb.get('source_file', '')
+                if source_file and source_file.endswith('.pdf'):
+                    filename = Path(source_file).name
+                    if filename in self._data['pdfs']:
                         study_info = self._data['pdfs'][filename]['study_info']
-                        
                         study_info['studied'] = True
                         if actor_name not in study_info['studied_by']:
                             study_info['studied_by'].append(actor_name)
-                        study_info['study_count'] += 1
-                        
-                        studied_at = paper_entry.get('studied_at', '')
-                        if studied_at > study_info['last_studied']:
-                            study_info['last_studied'] = studied_at
-                        
                         if loop_topic and loop_topic not in study_info['topics']:
                             study_info['topics'].append(loop_topic)
-                            
-                except Exception:
+            
+            for paper_entry in studied_papers:
+                paper = paper_entry.get('paper', {}) or {}
+                title = paper.get('title', '')
+                
+                # Check multiple locations for PDF path
+                pdf_path = None
+                
+                # 1. Check study_result.paper.file_path (actual downloaded PDF)
+                study_result = paper_entry.get('study_result', {})
+                if study_result:
+                    sr_paper = study_result.get('paper', {})
+                    if sr_paper:
+                        pdf_path = sr_paper.get('file_path')
+                
+                # 2. Fallback to paper.pdf_path or paper.file_path
+                if not pdf_path:
+                    pdf_path = paper.get('pdf_path') or paper.get('file_path')
+                
+                if not title and not pdf_path:
                     continue
+                
+                # Try to find the PDF
+                pdf_entry = None
+                
+                # First try by pdf_path/filename if available
+                if pdf_path:
+                    filename = Path(pdf_path).name
+                    if filename in self._data['pdfs']:
+                        pdf_entry = self._data['pdfs'][filename].copy()
+                        pdf_entry['filename'] = filename
+                
+                # Fallback to title matching
+                if not pdf_entry and title:
+                    pdf_entry = self.find_by_title(title)
+                
+                if not pdf_entry:
+                    unmatched.append(title[:50])
+                    continue
+                
+                filename = pdf_entry['filename']
+                study_info = self._data['pdfs'][filename]['study_info']
+                
+                study_info['studied'] = True
+                if actor_name not in study_info['studied_by']:
+                    study_info['studied_by'].append(actor_name)
+                study_info['study_count'] += 1
+                
+                studied_at = paper_entry.get('studied_at', '')
+                if studied_at > study_info['last_studied']:
+                    study_info['last_studied'] = studied_at
+                
+                if loop_topic and loop_topic not in study_info['topics']:
+                    study_info['topics'].append(loop_topic)
+                
+                matched += 1
+                
+        except Exception as e:
+            pass  # Skip files that can't be parsed
+        
+        return matched, unmatched
     
     def find_by_title(self, title: str) -> Optional[dict]:
         """Find a PDF by title (exact or fuzzy match)."""
@@ -653,9 +759,16 @@ def get_pdf_book() -> PDFBook:
     return _pdf_book
 
 
-def rebuild_pdf_book(validate: bool = True, detect_duplicates: bool = True) -> dict:
-    """Rebuild the PDF book index."""
-    return get_pdf_book().rebuild(validate, detect_duplicates)
+def rebuild_pdf_book(validate: bool = True, detect_duplicates: bool = True, 
+                     cleanup: bool = False) -> dict:
+    """Rebuild the PDF book index.
+    
+    Args:
+        validate: Check if PDFs are readable/valid
+        detect_duplicates: Find duplicate PDFs by content hash  
+        cleanup: If True, delete invalid and duplicate PDFs from disk
+    """
+    return get_pdf_book().rebuild(validate, detect_duplicates, cleanup)
 
 
 def get_pdf_book_stats() -> dict:

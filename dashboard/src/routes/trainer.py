@@ -5,7 +5,7 @@ Trainer server routes for Silvertongue Dashboard.
 import json
 from flask import Blueprint, jsonify, request
 
-from ..utils import (
+from dashboard.utils import (
     load_config, get_array_dir, get_trainer_config, get_trainer_url,
     translate_path_for_server, PROJECT_ROOT
 )

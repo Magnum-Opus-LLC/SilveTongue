@@ -4,7 +4,7 @@ Actor creation routes for Silvertongue Dashboard.
 
 from flask import Blueprint, jsonify, request
 
-from ..utils import get_array_dir, PROJECT_ROOT, import_project_module
+from dashboard.utils import get_array_dir, PROJECT_ROOT, import_project_module
 
 actor_creation_bp = Blueprint('actor_creation', __name__)
 

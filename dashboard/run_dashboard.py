@@ -12,12 +12,24 @@ Use legacy app.py:
     python run_dashboard.py --legacy
 """
 
+# Setup sys.path FIRST before any other imports
+import sys
+from pathlib import Path
+
+dashboard_root = Path(__file__).parent
+project_root = dashboard_root.parent
+
+# Project root must be FIRST for project's src/ imports to work
+# Dashboard root second for dashboard's own modules
+sys.path.insert(0, str(project_root))
+sys.path.insert(1, str(dashboard_root))
+
 import argparse
 import webbrowser
 import threading
 import time
 
-# Default to app_dev.py (modular version with PDF Book)
+# Now import app
 from app import app
 
 
