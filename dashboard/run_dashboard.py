@@ -18,7 +18,7 @@ import threading
 import time
 
 # Default to app_dev.py (modular version with PDF Book)
-from app_dev import app
+from app import app
 
 
 def open_browser(port):
