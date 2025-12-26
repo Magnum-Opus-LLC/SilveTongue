@@ -36,17 +36,17 @@ from src.actions.sleep_processor import (
 __all__ = [
     # Thought processing
     'ThoughtProcessor',
-    
-    # Study processing  
+
+    # Study processing
     'StudyProcessor',
     'study_processor',
-    
+
     # Learning schedules
     'LearningScheduleRunner',
     'create_learning_schedule',
     'run_learning_schedule',
     'discover_papers',
-    
+
     # Cognitive Loop (The Manifesto)
     'CognitiveLoop',
     'CognitiveState',
@@ -56,7 +56,7 @@ __all__ = [
     'run_forever',
     'start_learning',
     'resume_learning',
-    
+
     # Sleep (LoRA Training Data Generation)
     'SleepProcessor',
     'sleep',

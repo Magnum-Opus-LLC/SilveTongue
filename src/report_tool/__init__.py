@@ -33,6 +33,6 @@ from .report_generator import KnowledgeReportGenerator
 
 __all__ = [
     'LearningSessionAnalyzer',
-    'KnowledgeTimelapse', 
+    'KnowledgeTimelapse',
     'KnowledgeReportGenerator'
 ]

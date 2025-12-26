@@ -40,6 +40,7 @@ def _load_route_module(name):
     module_name = f'dashboard.routes.{name}'
     return _load_module(module_name, module_path)
 
+
 # Load all route modules
 _core = _load_route_module('core')
 _chat = _load_route_module('chat')

@@ -29,10 +29,13 @@ class SilvertongueSubconscious:
 
         prompt = "You are the Subconscious of Silvertongue.\n\n"
         prompt += "Values:\n" + "\n".join(f"- {v}" for v in values) + "\n\n"
-        prompt += "Principles:\n" + "\n".join(f"- {p}" for p in principles) + "\n\n"
-        prompt += "Adjustments:\n" + "\n".join(f"- {a}" for a in adjustments) + "\n\n"
-        prompt += "Core Knowledge:\n" + "\n".join(f"- {k}" for k in core_knowledge) + "\n\n"
-        
+        prompt += "Principles:\n" + \
+            "\n".join(f"- {p}" for p in principles) + "\n\n"
+        prompt += "Adjustments:\n" + \
+            "\n".join(f"- {a}" for a in adjustments) + "\n\n"
+        prompt += "Core Knowledge:\n" + \
+            "\n".join(f"- {k}" for k in core_knowledge) + "\n\n"
+
         return prompt
 
     def validate_thought(self, thought_plan, context):
@@ -41,7 +44,7 @@ class SilvertongueSubconscious:
         Returns a tuple: (is_valid, feedback)
         """
         subconscious_prompt = self.generate_subconscious_prompt()
-        
+
         validation_prompt = (
             "You are the Subconscious of Silvertongue. Your role is to ensure all actions align with your core values and principles.\n"
             "Review the proposed thought/plan below.\n"
@@ -52,14 +55,14 @@ class SilvertongueSubconscious:
             "If it is invalid or needs adjustment, return 'INVALID: <reason>'.\n"
             "Be strict but practical."
         )
-        
+
         messages = [
             {"role": "system", "content": subconscious_prompt},
             {"role": "user", "content": f"{validation_prompt}\n\nProposed Plan:\n{thought_plan}\n\nContext:\n{context}"}
         ]
-        
+
         response = get_chat_completion(messages, temperature=0.1).strip()
-        
+
         if response.startswith("VALID"):
             return True, "Proceed."
         else:
@@ -71,15 +74,18 @@ class SilvertongueSubconscious:
         Returns enriched analysis with domain, intent, complexity, and relevant context.
         """
         subconscious_prompt = self.generate_subconscious_prompt()
-        
+
         experiences = self.kb.get_experiences()
-        experiences_str = "\n".join(f"{i}. {e}" for i, e in enumerate(experiences))
-        
+        experiences_str = "\n".join(
+            f"{i}. {e}" for i, e in enumerate(experiences))
+
         supporting_kb = self.kb.get_supporting_knowledge()
-        supporting_kb_str = "\n".join(f"{i}. {k}" for i, k in enumerate(supporting_kb))
-        
+        supporting_kb_str = "\n".join(
+            f"{i}. {k}" for i, k in enumerate(supporting_kb))
+
         principles = self.kb.get_principles()
-        principles_str = "\n".join(f"{i}. {p}" for i, p in enumerate(principles))
+        principles_str = "\n".join(
+            f"{i}. {p}" for i, p in enumerate(principles))
 
         task_prompt = (
             "Analyze the following user request thoroughly.\n"
@@ -109,34 +115,35 @@ class SilvertongueSubconscious:
         ]
 
         response_text = get_chat_completion(messages, temperature=0.1)
-        
+
         # Basic cleanup to ensure JSON parsing if the model adds markdown blocks
-        clean_response = response_text.replace("```json", "").replace("```", "").strip()
-        
+        clean_response = response_text.replace(
+            "```json", "").replace("```", "").strip()
+
         try:
             result = json.loads(clean_response)
-            
+
             # Convert indices to full text (no truncation!)
             exp_indices = result.get("relevant_experience_indices", [])
             know_indices = result.get("relevant_knowledge_indices", [])
             prin_indices = result.get("applicable_principle_indices", [])
-            
+
             # Look up full text by index
             relevant_experiences = []
             for idx in exp_indices:
                 if isinstance(idx, int) and 0 <= idx < len(experiences):
                     relevant_experiences.append(experiences[idx])
-            
+
             relevant_knowledge = []
             for idx in know_indices:
                 if isinstance(idx, int) and 0 <= idx < len(supporting_kb):
                     relevant_knowledge.append(supporting_kb[idx])
-            
+
             applicable_principles = []
             for idx in prin_indices:
                 if isinstance(idx, int) and 0 <= idx < len(principles):
                     applicable_principles.append(principles[idx])
-            
+
             # Build final result with full text
             return {
                 "domain": result.get("domain", "General"),

@@ -27,23 +27,23 @@ elif sys.path.index(_project_root_str) > 0:
 def import_project_module(module_name: str):
     """
     Import a module from the project's src directory.
-    
+
     Since PROJECT_ROOT is now first in sys.path, normal imports should work.
     This function is kept for explicit imports when needed.
-    
+
     Usage:
         cognitive_loop = import_project_module('src.actions.cognitive_loop')
         CognitiveLoop = cognitive_loop.CognitiveLoop
     """
     import importlib
-    
+
     # Clear any cached dashboard versions
     if module_name in sys.modules:
         module = sys.modules[module_name]
         if hasattr(module, '__file__') and module.__file__:
             if 'dashboard' in str(module.__file__):
                 del sys.modules[module_name]
-    
+
     return importlib.import_module(module_name)
 
 

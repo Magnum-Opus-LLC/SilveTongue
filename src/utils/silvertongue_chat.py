@@ -59,13 +59,13 @@ class SilvertongueChat:
     """
     Interactive chat interface with the Silvertongue agent.
     """
-    
+
     def __init__(self, actor_name: str = "student"):
         self.actor_name = actor_name
         self.kb = KnowledgeBase(actor_name)
         self.conversation_history: List[Dict] = []
         self.system_prompt = self._build_system_prompt()
-        
+
     def _build_system_prompt(self) -> str:
         """Build the system prompt from actor's knowledge base."""
         # Get identity/behavior
@@ -78,55 +78,63 @@ class SilvertongueChat:
                     identity = behavior.get('identity', identity)
             except:
                 pass
-        
+
         # Get principles
         principles = self.kb.get_principles()
-        principles_str = "\n".join([f"- {p}" for p in principles[:10]]) if principles else "- Still developing core principles"
-        
+        principles_str = "\n".join(
+            [f"- {p}" for p in principles[:10]]) if principles else "- Still developing core principles"
+
         # Get values
         values = self.kb.get_values()
-        values_str = "\n".join([f"- {v}" for v in values[:10]]) if values else "- Intellectual curiosity\n- Continuous learning"
-        
+        values_str = "\n".join(
+            [f"- {v}" for v in values[:10]]) if values else "- Intellectual curiosity\n- Continuous learning"
+
         # Get knowledge
         core_knowledge = self.kb.get_core_knowledge()
         knowledge_items = []
         if core_knowledge:
             for item in core_knowledge[:15]:
                 if isinstance(item, dict):
-                    knowledge_items.append(f"- {item.get('title', item.get('topic', str(item)))}")
+                    knowledge_items.append(
+                        f"- {item.get('title', item.get('topic', str(item)))}")
                 else:
                     knowledge_items.append(f"- {item}")
-        knowledge_str = "\n".join(knowledge_items) if knowledge_items else "- Currently building knowledge base through learning"
-        
+        knowledge_str = "\n".join(
+            knowledge_items) if knowledge_items else "- Currently building knowledge base through learning"
+
         # Get experiences
         experiences = self.kb.get_experiences()
         exp_items = []
         if experiences:
             for exp in experiences[:10]:
                 if isinstance(exp, dict):
-                    exp_items.append(f"- {exp.get('description', exp.get('insight', str(exp)))}")
+                    exp_items.append(
+                        f"- {exp.get('description', exp.get('insight', str(exp)))}")
                 else:
                     exp_items.append(f"- {exp}")
-        experiences_str = "\n".join(exp_items) if exp_items else "- Actively learning and building experiences"
-        
+        experiences_str = "\n".join(
+            exp_items) if exp_items else "- Actively learning and building experiences"
+
         # Get challenges
         challenges = self.kb.get_challenges()
         challenge_items = []
         if challenges:
             for ch in challenges[:5]:
                 if isinstance(ch, dict):
-                    challenge_items.append(f"- {ch.get('challenge', ch.get('description', str(ch)))}")
+                    challenge_items.append(
+                        f"- {ch.get('challenge', ch.get('description', str(ch)))}")
                 else:
                     challenge_items.append(f"- {ch}")
-        challenges_str = "\n".join(challenge_items) if challenge_items else "- Exploring various intellectual challenges"
-        
+        challenges_str = "\n".join(
+            challenge_items) if challenge_items else "- Exploring various intellectual challenges"
+
         # Get mindset
         mindset = self.kb.get_current_mindset()
         if mindset:
             mindset_str = json.dumps(mindset, indent=2)
         else:
             mindset_str = "Open-minded, curious, and eager to learn"
-        
+
         return SYSTEM_PROMPT_TEMPLATE.format(
             actor_name=self.actor_name,
             identity=identity,
@@ -137,21 +145,21 @@ class SilvertongueChat:
             challenges=challenges_str,
             mindset=mindset_str
         )
-    
+
     def refresh_knowledge(self):
         """Refresh the system prompt with latest knowledge."""
         self.kb._cache = {}  # Clear cache
         self.system_prompt = self._build_system_prompt()
         print("🔄 Knowledge refreshed")
-    
+
     def chat(self, user_message: str, temperature: float = 0.7) -> str:
         """
         Send a message and get a response.
-        
+
         Args:
             user_message: The user's message
             temperature: Response creativity (0.0-1.0)
-            
+
         Returns:
             The agent's response
         """
@@ -160,36 +168,36 @@ class SilvertongueChat:
             "role": "user",
             "content": user_message
         })
-        
+
         # Build messages for API call
         messages = [
             {"role": "system", "content": self.system_prompt}
         ] + self.conversation_history
-        
+
         # Get response
         response = get_chat_completion(messages, temperature=temperature)
-        
+
         # Add to history
         self.conversation_history.append({
             "role": "assistant",
             "content": response
         })
-        
+
         return response
-    
+
     def clear_history(self):
         """Clear conversation history."""
         self.conversation_history = []
         print("🗑️ Conversation history cleared")
-    
+
     def get_conversation_summary(self) -> str:
         """Get a summary of the conversation."""
         if not self.conversation_history:
             return "No conversation yet."
-        
+
         turns = len(self.conversation_history) // 2
         return f"{turns} exchanges in this conversation"
-    
+
     def save_conversation(self, filepath: Optional[Path] = None) -> Path:
         """Save the conversation to a file."""
         if filepath is None:
@@ -199,17 +207,17 @@ class SilvertongueChat:
             conversations_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = conversations_dir / f"chat_{timestamp}.json"
-        
+
         data = {
             "actor_name": self.actor_name,
             "timestamp": datetime.now().isoformat(),
             "turns": len(self.conversation_history) // 2,
             "conversation": self.conversation_history
         }
-        
+
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=2)
-        
+
         return filepath
 
 
@@ -230,50 +238,52 @@ Commands:
   /quit     - Exit chat
     """)
     print("-" * 60)
-    
+
     chat = SilvertongueChat(actor_name)
-    
+
     print(f"\n🧠 {actor_name} is ready to chat!\n")
-    
+
     while True:
         try:
             user_input = input("You: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n\nGoodbye! 👋")
             break
-        
+
         if not user_input:
             continue
-        
+
         # Handle commands
         if user_input.startswith('/'):
             cmd = user_input.lower().split()[0]
-            
+
             if cmd == '/quit' or cmd == '/exit' or cmd == '/q':
-                save = input("Save conversation before exiting? [y/N]: ").strip().lower()
+                save = input(
+                    "Save conversation before exiting? [y/N]: ").strip().lower()
                 if save == 'y':
                     path = chat.save_conversation()
                     print(f"💾 Saved to: {path}")
                 print("Goodbye! 👋")
                 break
-            
+
             elif cmd == '/clear':
                 chat.clear_history()
-            
+
             elif cmd == '/refresh':
                 chat.refresh_knowledge()
-            
+
             elif cmd == '/save':
                 path = chat.save_conversation()
                 print(f"💾 Saved to: {path}")
-            
+
             elif cmd == '/info':
                 print(f"\n📊 Actor: {actor_name}")
                 print(f"   Principles: {len(chat.kb.get_principles())}")
-                print(f"   Knowledge items: {len(chat.kb.get_core_knowledge())}")
+                print(
+                    f"   Knowledge items: {len(chat.kb.get_core_knowledge())}")
                 print(f"   Experiences: {len(chat.kb.get_experiences())}")
                 print(f"   {chat.get_conversation_summary()}\n")
-            
+
             elif cmd == '/help':
                 print("""
 Commands:
@@ -284,12 +294,12 @@ Commands:
   /help     - Show this help
   /quit     - Exit chat
                 """)
-            
+
             else:
                 print(f"Unknown command: {cmd}")
-            
+
             continue
-        
+
         # Regular chat
         try:
             response = chat.chat(user_input)

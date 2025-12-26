@@ -955,41 +955,41 @@ def get_all_studied_papers():
     array_dir = get_array_dir()
     actors_dir = array_dir / 'actors'
     studied_map = {}  # normalized_title -> study info
-    
+
     if not actors_dir.exists():
         return studied_map
-    
+
     for actor_dir in actors_dir.iterdir():
         if not actor_dir.is_dir() or actor_dir.name.startswith('.'):
             continue
-        
+
         actor_name = actor_dir.name
         loops_dir = array_dir / 'data' / actor_name / 'cognitive_loops'
-        
+
         if not loops_dir.exists():
             continue
-        
+
         for loop_file in loops_dir.glob('loop_*.json'):
             try:
                 with open(loop_file, 'r') as f:
                     data = json.load(f)
-                
+
                 state = data.get('state', {})
                 loop_topic = state.get('topic', 'Unknown')
-                
+
                 for paper_entry in state.get('studied_papers', []):
                     paper = paper_entry.get('paper', {}) or {}
                     title = paper.get('title', '')
-                    
+
                     if not title:
                         continue
-                    
+
                     normalized = normalize_title(title)
                     if not normalized:
                         continue
-                    
+
                     studied_at = paper_entry.get('studied_at', '')
-                    
+
                     if normalized not in studied_map:
                         studied_map[normalized] = {
                             'actors': [],
@@ -998,7 +998,7 @@ def get_all_studied_papers():
                             'topics': [],
                             'original_title': title
                         }
-                    
+
                     info = studied_map[normalized]
                     if actor_name not in info['actors']:
                         info['actors'].append(actor_name)
@@ -1007,10 +1007,10 @@ def get_all_studied_papers():
                         info['last_studied'] = studied_at
                     if loop_topic and loop_topic not in info['topics']:
                         info['topics'].append(loop_topic)
-                        
+
             except Exception:
                 continue
-    
+
     return studied_map
 
 
@@ -1024,7 +1024,7 @@ def api_pdf_cache_stats():
             book = get_pdf_book()
             book.load()
             stats = book.get_stats()
-            
+
             return jsonify({
                 'exists': True,
                 'path': str(get_pdf_cache_dir()),
@@ -1037,11 +1037,11 @@ def api_pdf_cache_stats():
                 'not_studied_count': stats.get('valid_pdfs', 0) - stats.get('studied_pdfs', 0) - stats.get('duplicates', 0),
                 'updated_at': book._data.get('updated_at')
             })
-        
+
         # Fallback to old pdf_stock method
         stock = get_pdf_stock()
         studied_map = get_all_studied_papers()
-        
+
         # Count how many cached PDFs have been studied
         studied_count = 0
         for filename, info in stock.get('pdfs', {}).items():
@@ -1087,7 +1087,7 @@ def api_pdf_cache_rebuild():
                 'invalid_pdfs': result.get('invalid', 0),
                 'duplicates': result.get('duplicates', 0)
             })
-        
+
         # Fallback to old method
         stock = rebuild_pdf_stock()
         # Clear the in-memory cache to force reload
@@ -1112,10 +1112,10 @@ def api_pdf_cache_list():
         if PDF_BOOK_AVAILABLE:
             book = get_pdf_book()
             book.load()
-            
+
             # Get studied papers map
             studied_map = get_all_studied_papers()
-            
+
             pdfs = []
             for filename, info in book._data.get('pdfs', {}).items():
                 # Skip invalid PDFs
@@ -1124,15 +1124,17 @@ def api_pdf_cache_list():
                 # Skip duplicates
                 if info.get('is_duplicate'):
                     continue
-                    
+
                 normalized = info.get('normalized_title', '')
                 study_info = studied_map.get(normalized, {})
-                
+
                 # Also check study_info from PDF Book
                 book_study = info.get('study_info', {})
-                is_studied = bool(study_info) or book_study.get('studied', False)
-                studied_by = study_info.get('actors', []) or book_study.get('studied_by', [])
-                
+                is_studied = bool(study_info) or book_study.get(
+                    'studied', False)
+                studied_by = study_info.get(
+                    'actors', []) or book_study.get('studied_by', [])
+
                 pdfs.append({
                     'filename': filename,
                     'title': info.get('title', ''),
@@ -1146,14 +1148,14 @@ def api_pdf_cache_list():
                     'last_studied': study_info.get('last_studied', '') or book_study.get('last_studied', ''),
                     'study_topics': study_info.get('topics', []) or book_study.get('topics', [])
                 })
-            
+
             # Sort by title
             pdfs.sort(key=lambda x: x.get('title', '').lower())
-            
+
             # Get stats from PDF Book
             stats = book.get_stats()
             studied_count = sum(1 for p in pdfs if p['studied'])
-            
+
             return jsonify({
                 'total': len(pdfs),
                 'studied_count': studied_count,
@@ -1162,10 +1164,10 @@ def api_pdf_cache_list():
                 'duplicate_count': stats.get('duplicates', 0),
                 'pdfs': pdfs
             })
-        
+
         # Fallback to old pdf_stock method (no validation)
         stock = get_pdf_stock()
-        
+
         # Get studied papers map
         studied_map = get_all_studied_papers()
 
@@ -1173,7 +1175,7 @@ def api_pdf_cache_list():
         for filename, info in stock.get('pdfs', {}).items():
             normalized = info.get('normalized_title', '')
             study_info = studied_map.get(normalized, {})
-            
+
             pdfs.append({
                 'filename': filename,
                 'title': info.get('original_title', ''),

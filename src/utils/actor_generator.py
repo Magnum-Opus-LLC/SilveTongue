@@ -93,10 +93,10 @@ challenges:
 def generate_actor_profile(description: str) -> dict:
     """
     Generate a complete actor profile from a high-level description.
-    
+
     Args:
         description: A description of the actor (e.g., "A chemical engineer with 5 years of refinery experience")
-    
+
     Returns:
         dict: A dictionary containing all profile categories
     """
@@ -104,16 +104,16 @@ def generate_actor_profile(description: str) -> dict:
         {"role": "system", "content": GENERATION_SPEC},
         {"role": "user", "content": f"Generate a detailed actor profile for:\n\n{description}"}
     ]
-    
+
     response = get_chat_completion(messages, temperature=0.3)
-    
+
     # Extract YAML from response
     yaml_content = response
     if "```yaml" in response:
         yaml_content = response.split("```yaml")[1].split("```")[0]
     elif "```" in response:
         yaml_content = response.split("```")[1].split("```")[0]
-    
+
     try:
         profile = yaml.safe_load(yaml_content)
         return profile
@@ -125,7 +125,7 @@ def generate_actor_profile(description: str) -> dict:
 def save_actor_profile(profile: dict, actor_name: str, project_root: Path = None):
     """
     Save generated profile to the actor directory structure.
-    
+
     Args:
         profile: Dictionary containing all profile categories
         actor_name: Name of the actor (will create directory under array_dir/actors/)
@@ -133,7 +133,7 @@ def save_actor_profile(profile: dict, actor_name: str, project_root: Path = None
     """
     if project_root is None:
         project_root = Path(__file__).parent.parent.parent
-    
+
     # Template stays in core, all other actors go to array_dir
     if actor_name == 'template':
         actor_root = project_root / 'actors' / actor_name
@@ -145,7 +145,7 @@ def save_actor_profile(profile: dict, actor_name: str, project_root: Path = None
             actor_root = array_dir / 'actors' / actor_name
         except Exception:
             actor_root = project_root / 'actors' / actor_name
-    
+
     # Define paths
     paths = {
         'values': actor_root / 'characteristic' / 'value' / 'values.yaml',
@@ -156,22 +156,23 @@ def save_actor_profile(profile: dict, actor_name: str, project_root: Path = None
         'adjustments': actor_root / 'expertise' / 'domain' / 'adjustment' / 'adjustments.yaml',
         'challenges': actor_root / 'expertise' / 'domain' / 'challenge' / 'challenges.yaml',
     }
-    
+
     # Create directories and save files
     for key, path in paths.items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         content = profile.get(key, [])
         if not isinstance(content, list):
             content = [content] if content else []
-        
+
         yaml_data = {key: content}
-        
+
         with open(path, 'w') as f:
-            yaml.dump(yaml_data, f, default_flow_style=False, allow_unicode=True, width=120)
-        
+            yaml.dump(yaml_data, f, default_flow_style=False,
+                      allow_unicode=True, width=120)
+
         print(f"Saved {key} to {path}")
-    
+
     # Copy behavior.json from template (template is always in project root)
     template_behavior = project_root / 'actors' / 'template' / 'behavior.json'
     actor_behavior = actor_root / 'behavior.json'
@@ -179,7 +180,7 @@ def save_actor_profile(profile: dict, actor_name: str, project_root: Path = None
         import shutil
         shutil.copy(template_behavior, actor_behavior)
         print(f"Copied behavior.json to {actor_behavior}")
-    
+
     print(f"\nActor '{actor_name}' created successfully at {actor_root}")
 
 
@@ -192,29 +193,29 @@ def main():
         print('  python actor_generator.py "A senior chemical engineer with 10 years of refinery experience"')
         print('  python actor_generator.py "A data scientist specializing in NLP" --save nlp_scientist')
         sys.exit(1)
-    
+
     description = sys.argv[1]
-    
+
     # Check for --save flag
     save_name = None
     if "--save" in sys.argv:
         save_idx = sys.argv.index("--save")
         if save_idx + 1 < len(sys.argv):
             save_name = sys.argv[save_idx + 1]
-    
+
     print(f"Generating actor profile for: {description}\n")
     print("=" * 60)
-    
+
     profile = generate_actor_profile(description)
-    
+
     if "raw_response" in profile:
         print("Failed to parse structured profile. Raw response:")
         print(profile["raw_response"])
         sys.exit(1)
-    
+
     # Print the generated profile
     print(yaml.dump(profile, default_flow_style=False, allow_unicode=True, width=120))
-    
+
     # Save if requested
     if save_name:
         print("=" * 60)

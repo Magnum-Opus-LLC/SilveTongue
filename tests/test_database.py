@@ -1,3 +1,4 @@
+from utils.database import DatabaseManager
 import unittest
 import os
 import shutil
@@ -7,8 +8,6 @@ import sys
 
 # Add src to python path
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
-
-from utils.database import DatabaseManager
 
 
 class TestDatabaseManager(unittest.TestCase):

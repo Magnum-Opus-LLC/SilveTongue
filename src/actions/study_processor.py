@@ -208,57 +208,61 @@ Be intellectually rigorous. Challenge weak arguments. Celebrate genuine insights
 
 class StudyProcessor:
     """Process papers and extract structured knowledge."""
-    
+
     def __init__(self, actor_name: str = 'template'):
         self.actor_name = actor_name
         self.project_root = Path(__file__).parent.parent.parent
         self.actor_root = self.project_root / 'actors' / actor_name
         self.schedule_root = self.actor_root / 'learning_schedule'
         self.kb = KnowledgeBase(actor_name)
-    
+
     def study_paper(self, file_path: Path, study_config: Dict) -> Dict:
         """
         Study a single paper and extract knowledge.
-        
+
         Args:
             file_path: Path to the paper
             study_config: Study configuration from schedule
-        
+
         Returns:
             Complete study result with notes and knowledge bits
         """
         print(f"\n📖 Studying: {file_path.name}")
-        
+
         # Parse the paper
         parsed = paper_parser.parse_file(file_path)
-        print(f"   Parsed {parsed['metadata']['word_count']} words, {len(parsed['chunks'])} chunks")
-        
+        print(
+            f"   Parsed {parsed['metadata']['word_count']} words, {len(parsed['chunks'])} chunks")
+
         # Extract knowledge from each chunk
         all_bits = []
         chunk_summaries = []
         all_questions = []
-        
+
         extraction_targets = "\n".join([
-            f"- {t['type']}: {t['description']}" 
+            f"- {t['type']}: {t['description']}"
             for t in study_config.get('extraction_targets', [])
         ])
-        focus_areas = ", ".join(study_config.get('focus_areas', ['key concepts']))
-        
+        focus_areas = ", ".join(study_config.get(
+            'focus_areas', ['key concepts']))
+
         # Calculate safe chunk size based on model's context window
         prompt_overhead = estimate_tokens(EXTRACTION_PROMPT.format(
-            chunk_num=1, total_chunks=1, content="", 
+            chunk_num=1, total_chunks=1, content="",
             extraction_targets=extraction_targets, focus_areas=focus_areas
         ))
-        safe_chunk_chars = get_safe_chunk_size(context_size=prompt_overhead, overhead=2000) * 4  # tokens to chars
-        
-        print(f"   Using dynamic chunk size: ~{safe_chunk_chars//1000}K chars (model context: {get_model_context_window()} tokens)")
-        
+        safe_chunk_chars = get_safe_chunk_size(
+            context_size=prompt_overhead, overhead=2000) * 4  # tokens to chars
+
+        print(
+            f"   Using dynamic chunk size: ~{safe_chunk_chars//1000}K chars (model context: {get_model_context_window()} tokens)")
+
         for i, chunk in enumerate(parsed['chunks']):
             print(f"   Processing chunk {i+1}/{len(parsed['chunks'])}...")
-            
+
             # Dynamically limit chunk size based on context window
             chunk_content = chunk[:safe_chunk_chars]
-            
+
             prompt = EXTRACTION_PROMPT.format(
                 chunk_num=i+1,
                 total_chunks=len(parsed['chunks']),
@@ -266,16 +270,16 @@ class StudyProcessor:
                 extraction_targets=extraction_targets,
                 focus_areas=focus_areas
             )
-            
+
             response = get_chat_completion([
                 {"role": "system", "content": "You are a knowledge extraction assistant. Always respond with valid JSON."},
                 {"role": "user", "content": prompt}
             ], temperature=0.3)
-            
+
             try:
                 # Parse response
                 chunk_result = self._parse_json_response(response)
-                
+
                 # Add source info to each bit
                 for bit in chunk_result.get('knowledge_bits', []):
                     bit['source_file'] = str(file_path)
@@ -283,18 +287,19 @@ class StudyProcessor:
                     bit['extracted_at'] = datetime.now().isoformat()
                     bit['bit_id'] = str(uuid.uuid4())[:8]
                     all_bits.append(bit)
-                
+
                 if chunk_result.get('chunk_summary'):
-                    chunk_summaries.append(f"Chunk {i+1}: {chunk_result['chunk_summary']}")
-                
+                    chunk_summaries.append(
+                        f"Chunk {i+1}: {chunk_result['chunk_summary']}")
+
                 all_questions.extend(chunk_result.get('questions_raised', []))
-                
+
             except Exception as e:
                 print(f"   ⚠️ Error processing chunk {i+1}: {e}")
                 continue
-        
+
         print(f"   Extracted {len(all_bits)} knowledge bits")
-        
+
         # Synthesize overall notes
         study_notes = None
         if study_config.get('generate_summary', True) and all_bits:
@@ -306,7 +311,7 @@ class StudyProcessor:
                 chunk_summaries=chunk_summaries,
                 questions=all_questions
             )
-        
+
         # Perform enlightenment analysis
         enlightenment = None
         if study_config.get('analyze_enlightenment', True) and study_notes:
@@ -317,7 +322,8 @@ class StudyProcessor:
                 all_bits=all_bits
             )
             if enlightenment:
-                category = enlightenment.get('enlightenment_category', 'UNKNOWN')
+                category = enlightenment.get(
+                    'enlightenment_category', 'UNKNOWN')
                 score = enlightenment.get('value_score', '?')
                 emoji = {
                     'CONFIRMS': '✅',
@@ -326,8 +332,9 @@ class StudyProcessor:
                     'REVOLUTIONARY': '🚀',
                     'LOW_VALUE': '📉'
                 }.get(category, '❓')
-                print(f"   {emoji} Enlightenment: {category} (value: {score}/10)")
-        
+                print(
+                    f"   {emoji} Enlightenment: {category} (value: {score}/10)")
+
         # Build final result
         result = {
             "study_id": str(uuid.uuid4()),
@@ -351,24 +358,24 @@ class StudyProcessor:
                 "focus_areas": study_config.get('focus_areas', [])
             }
         }
-        
+
         return result
-    
+
     def study_from_url(self, paper_info: Dict, study_config: Dict) -> Dict:
         """
         Study a paper by fetching its PDF from a URL.
         Uses Smart Paper Fetcher for intelligent PDF extraction if available.
-        
+
         Args:
             paper_info: Paper metadata dict with keys like 'url', 'title', 'abstract', 'doi'
             study_config: Study configuration from schedule
-        
+
         Returns:
             Complete study result with notes and knowledge bits
         """
         title = paper_info.get('title', 'Unknown Paper')
         print(f"\n📖 Studying: {title}")
-        
+
         # Try Smart Paper Fetcher first (LLM-guided extraction)
         if HAS_SMART_FETCHER:
             pdf_path = self._try_smart_fetcher(paper_info)
@@ -376,38 +383,39 @@ class StudyProcessor:
                 print(f"   ✅ PDF obtained via Smart Fetcher")
                 # Study the PDF file
                 return self.study_paper(pdf_path, study_config)
-        
+
         # Fallback to old PDF fetcher
         if HAS_PDF_FETCHER:
             extractor = PaperContentExtractor()
             extracted = extractor.extract_from_paper(paper_info)
-            
+
             if extracted['success'] and extracted.get('metadata', {}).get('content_source') == 'full_pdf':
-                print(f"   ✅ Full PDF obtained ({extracted['metadata'].get('word_count', 0)} words)")
+                print(
+                    f"   ✅ Full PDF obtained ({extracted['metadata'].get('word_count', 0)} words)")
                 return self._study_extracted_content(extracted, paper_info, study_config)
             else:
                 if extracted.get('error'):
                     print(f"   ⚠️ {extracted['error']}")
-        
+
         # Final fallback to abstract
         print(f"   ⚠️ PDF unavailable. Using abstract only.")
         return self._study_abstract_only(paper_info, study_config)
-    
+
     def _try_smart_fetcher(self, paper_info: Dict) -> Optional[Path]:
         """
         Try to fetch PDF using Smart Paper Fetcher (LLM-guided extraction).
-        
+
         Args:
             paper_info: Paper metadata
-            
+
         Returns:
             Path to downloaded PDF, or None if failed
         """
         try:
             from src.scholar_search.pdf_extractor import PDFExtractor
-            
+
             extractor = PDFExtractor()
-            
+
             # Convert paper_info to search result format
             search_result = {
                 'title': paper_info.get('title', 'Unknown'),
@@ -415,39 +423,42 @@ class StudyProcessor:
                 'citation': paper_info.get('citations', '0'),
                 'publication_info': paper_info.get('publication_info', '')
             }
-            
+
             # Check if already cached
             cached = extractor.get_cached_pdf(paper_info.get('title', ''))
             if cached:
                 print(f"   📦 Found in cache: {cached.name}")
                 return cached
-            
+
             print(f"   🤖 Using LLM to extract PDF URLs...")
-            
+
             # Use LLM to extract PDF strategies
-            pdf_strategies = extractor.extract_pdf_urls_with_llm([search_result], max_papers=1)
-            
+            pdf_strategies = extractor.extract_pdf_urls_with_llm(
+                [search_result], max_papers=1)
+
             if not pdf_strategies:
                 print(f"   ⚠️ LLM could not identify PDF strategies")
                 return None
-            
+
             strategy = pdf_strategies[0]
             strategies_list = strategy.get('pdf_strategies', [])
-            
+
             # Sort by confidence
             strategies_list.sort(
-                key=lambda x: {'high': 3, 'medium': 2, 'low': 1}.get(x.get('confidence', 'low'), 0),
+                key=lambda x: {'high': 3, 'medium': 2, 'low': 1}.get(
+                    x.get('confidence', 'low'), 0),
                 reverse=True
             )
-            
+
             print(f"   📋 Trying {len(strategies_list)} strategies...")
-            
+
             # Try each strategy
             for i, pdf_strategy in enumerate(strategies_list, 1):
                 method = pdf_strategy.get('method')
                 confidence = pdf_strategy.get('confidence', 'unknown')
-                print(f"   [{i}/{len(strategies_list)}] Method: {method} (confidence: {confidence})")
-                
+                print(
+                    f"   [{i}/{len(strategies_list)}] Method: {method} (confidence: {confidence})")
+
                 if method == 'direct':
                     # Direct PDF URL
                     pdf_url = pdf_strategy.get('url')
@@ -459,13 +470,14 @@ class StudyProcessor:
                         )
                         if downloaded_path:
                             return downloaded_path
-                
+
                 elif method == 'page_parse':
                     # Need to extract PDF from landing page
                     landing_page = pdf_strategy.get('landing_page')
                     platform = strategy.get('platform', 'unknown')
                     if landing_page:
-                        pdf_url = extractor.extract_pdf_from_page(landing_page, platform)
+                        pdf_url = extractor.extract_pdf_from_page(
+                            landing_page, platform)
                         if pdf_url:
                             downloaded_path = extractor.download_pdf(
                                 pdf_url,
@@ -474,7 +486,7 @@ class StudyProcessor:
                             )
                             if downloaded_path:
                                 return downloaded_path
-                
+
                 elif method == 'alternative':
                     # Try alternative source
                     pdf_url = pdf_strategy.get('url')
@@ -486,35 +498,36 @@ class StudyProcessor:
                         )
                         if downloaded_path:
                             return downloaded_path
-            
+
             print(f"   ⚠️ All Smart Fetcher strategies failed")
             return None
-            
+
         except Exception as e:
             print(f"   ⚠️ Smart Fetcher error: {e}")
             return None
-    
+
     def _study_extracted_content(self, extracted: Dict, paper_info: Dict, study_config: Dict) -> Dict:
         """
         Study from extracted PDF content.
         """
         print(f"   Parsing {len(extracted.get('chunks', []))} chunks...")
-        
+
         all_bits = []
         chunk_summaries = []
         all_questions = []
-        
+
         extraction_targets = "\n".join([
-            f"- {t['type']}: {t['description']}" 
+            f"- {t['type']}: {t['description']}"
             for t in study_config.get('extraction_targets', [])
         ])
-        focus_areas = ", ".join(study_config.get('focus_areas', ['key concepts']))
-        
+        focus_areas = ", ".join(study_config.get(
+            'focus_areas', ['key concepts']))
+
         chunks = extracted.get('chunks', [])
-        
+
         for i, chunk in enumerate(chunks):
             print(f"   Processing chunk {i+1}/{len(chunks)}...")
-            
+
             prompt = EXTRACTION_PROMPT.format(
                 chunk_num=i+1,
                 total_chunks=len(chunks),
@@ -522,15 +535,15 @@ class StudyProcessor:
                 extraction_targets=extraction_targets,
                 focus_areas=focus_areas
             )
-            
+
             response = get_chat_completion([
                 {"role": "system", "content": "You are a knowledge extraction assistant. Always respond with valid JSON."},
                 {"role": "user", "content": prompt}
             ], temperature=0.3)
-            
+
             try:
                 chunk_result = self._parse_json_response(response)
-                
+
                 for bit in chunk_result.get('knowledge_bits', []):
                     bit['source_url'] = paper_info.get('url', '')
                     bit['source_title'] = paper_info.get('title', '')
@@ -538,18 +551,19 @@ class StudyProcessor:
                     bit['extracted_at'] = datetime.now().isoformat()
                     bit['bit_id'] = str(uuid.uuid4())[:8]
                     all_bits.append(bit)
-                
+
                 if chunk_result.get('chunk_summary'):
-                    chunk_summaries.append(f"Chunk {i+1}: {chunk_result['chunk_summary']}")
-                
+                    chunk_summaries.append(
+                        f"Chunk {i+1}: {chunk_result['chunk_summary']}")
+
                 all_questions.extend(chunk_result.get('questions_raised', []))
-                
+
             except Exception as e:
                 print(f"   ⚠️ Error processing chunk {i+1}: {e}")
                 continue
-        
+
         print(f"   Extracted {len(all_bits)} knowledge bits from full PDF")
-        
+
         # Synthesize notes
         study_notes = None
         if study_config.get('generate_summary', True) and all_bits:
@@ -561,7 +575,7 @@ class StudyProcessor:
                 chunk_summaries=chunk_summaries,
                 questions=all_questions
             )
-        
+
         # Enlightenment analysis
         enlightenment = None
         if study_config.get('analyze_enlightenment', True) and study_notes:
@@ -572,14 +586,16 @@ class StudyProcessor:
                 all_bits=all_bits
             )
             if enlightenment:
-                category = enlightenment.get('enlightenment_category', 'UNKNOWN')
+                category = enlightenment.get(
+                    'enlightenment_category', 'UNKNOWN')
                 score = enlightenment.get('value_score', '?')
                 emoji = {
                     'CONFIRMS': '✅', 'EXPANDS': '🌱', 'CHALLENGES': '⚡',
                     'REVOLUTIONARY': '🚀', 'LOW_VALUE': '📉'
                 }.get(category, '❓')
-                print(f"   {emoji} Enlightenment: {category} (value: {score}/10)")
-        
+                print(
+                    f"   {emoji} Enlightenment: {category} (value: {score}/10)")
+
         return {
             "study_id": str(uuid.uuid4()),
             "studied_at": datetime.now().isoformat(),
@@ -607,14 +623,14 @@ class StudyProcessor:
                 "focus_areas": study_config.get('focus_areas', [])
             }
         }
-    
+
     def _study_abstract_only(self, paper_info: Dict, study_config: Dict) -> Dict:
         """
         Study using only the paper's abstract when PDF is unavailable.
         """
         abstract = paper_info.get('abstract', '')
         title = paper_info.get('title', 'Unknown')
-        
+
         if not abstract:
             print(f"   ⚠️ No abstract available for: {title}")
             return {
@@ -630,15 +646,16 @@ class StudyProcessor:
                 "study_notes": None,
                 "enlightenment": None
             }
-        
+
         print(f"   📝 Studying from abstract ({len(abstract)} chars)")
-        
+
         extraction_targets = "\n".join([
-            f"- {t['type']}: {t['description']}" 
+            f"- {t['type']}: {t['description']}"
             for t in study_config.get('extraction_targets', [])
         ])
-        focus_areas = ", ".join(study_config.get('focus_areas', ['key concepts']))
-        
+        focus_areas = ", ".join(study_config.get(
+            'focus_areas', ['key concepts']))
+
         # Enhanced prompt for abstract-only study
         prompt = f"""You are extracting knowledge from a paper abstract.
 
@@ -678,15 +695,15 @@ Return a JSON object:
     "relevance_assessment": "high|medium|low with reason"
 }}
 """
-        
+
         response = get_chat_completion([
             {"role": "system", "content": "You are a knowledge extraction assistant. Extract insights from paper abstracts. Always respond with valid JSON."},
             {"role": "user", "content": prompt}
         ], temperature=0.3)
-        
+
         try:
             result = self._parse_json_response(response)
-            
+
             all_bits = []
             for bit in result.get('knowledge_bits', []):
                 bit['source_url'] = paper_info.get('url', '')
@@ -695,9 +712,9 @@ Return a JSON object:
                 bit['extracted_at'] = datetime.now().isoformat()
                 bit['bit_id'] = str(uuid.uuid4())[:8]
                 all_bits.append(bit)
-            
+
             print(f"   Extracted {len(all_bits)} knowledge bits from abstract")
-            
+
             # Create study notes from abstract analysis
             study_notes = {
                 "paper_summary": result.get('abstract_summary', ''),
@@ -707,7 +724,7 @@ Return a JSON object:
                 "relevance": result.get('relevance_assessment', ''),
                 "note": "Based on abstract only - full paper analysis requires PDF access"
             }
-            
+
             # Simplified enlightenment for abstract
             enlightenment = None
             if study_config.get('analyze_enlightenment', True) and all_bits:
@@ -717,9 +734,10 @@ Return a JSON object:
                     all_bits=all_bits
                 )
                 if enlightenment:
-                    category = enlightenment.get('enlightenment_category', 'UNKNOWN')
+                    category = enlightenment.get(
+                        'enlightenment_category', 'UNKNOWN')
                     print(f"   💡 Enlightenment (from abstract): {category}")
-            
+
             return {
                 "study_id": str(uuid.uuid4()),
                 "studied_at": datetime.now().isoformat(),
@@ -745,7 +763,7 @@ Return a JSON object:
                     "focus_areas": study_config.get('focus_areas', [])
                 }
             }
-            
+
         except Exception as e:
             print(f"   ⚠️ Error studying abstract: {e}")
             return {
@@ -757,57 +775,59 @@ Return a JSON object:
                 "enlightenment": None
             }
 
-    def _synthesize_notes(self, paper_name: str, file_path: str, 
+    def _synthesize_notes(self, paper_name: str, file_path: str,
                           all_bits: List[Dict], chunk_summaries: List[str],
                           questions: List[str]) -> Optional[Dict]:
         """Synthesize knowledge bits into comprehensive notes."""
-        
+
         # Get model's context window
         max_tokens = get_model_context_window()
-        
+
         # Calculate how many bits we can include
         # Reserve: 2000 tokens for prompt template + 2000 for response
         available_tokens = max_tokens - 4000
-        
+
         # Estimate current content size
         summaries_text = "\n".join(chunk_summaries)
         questions_text = "\n".join(f"- {q}" for q in questions[:20])
         base_content = summaries_text + questions_text
         base_tokens = estimate_tokens(base_content)
-        
+
         # Calculate how many bits we can fit
         tokens_for_bits = available_tokens - base_tokens
         avg_tokens_per_bit = 150  # Conservative estimate per knowledge bit
         max_bits = max(5, tokens_for_bits // avg_tokens_per_bit)
-        
+
         bits_for_prompt = all_bits[:int(max_bits)]
-        
-        print(f"   Synthesizing with {len(bits_for_prompt)}/{len(all_bits)} knowledge bits (max_tokens={max_tokens})")
-        
+
+        print(
+            f"   Synthesizing with {len(bits_for_prompt)}/{len(all_bits)} knowledge bits (max_tokens={max_tokens})")
+
         prompt = SYNTHESIS_PROMPT.format(
             paper_name=paper_name,
             file_path=file_path,
             all_bits_json=json.dumps(bits_for_prompt, indent=2),
-            chunk_summaries="\n".join(chunk_summaries[:20]),  # Limit summaries too
+            chunk_summaries="\n".join(
+                chunk_summaries[:20]),  # Limit summaries too
             questions=questions_text
         )
-        
+
         response = get_chat_completion([
             {"role": "system", "content": "You are a knowledge synthesis assistant. Always respond with valid JSON."},
             {"role": "user", "content": prompt}
         ], temperature=0.4)
-        
+
         try:
             return self._parse_json_response(response)
         except Exception as e:
             print(f"   ⚠️ Error synthesizing notes: {e}")
             return None
-    
-    def _analyze_enlightenment(self, paper_name: str, study_notes: Dict, 
-                                all_bits: List[Dict]) -> Optional[Dict]:
+
+    def _analyze_enlightenment(self, paper_name: str, study_notes: Dict,
+                               all_bits: List[Dict]) -> Optional[Dict]:
         """
         Analyze paper's enlightenment value against actor's current knowledge.
-        
+
         Returns assessment of whether paper:
         - CONFIRMS existing beliefs
         - EXPANDS current understanding  
@@ -821,27 +841,30 @@ Return a JSON object:
         experiences = self.kb.get_experiences()
         challenges = self.kb.get_challenges()
         current_mindset = self.kb.get_current_mindset()
-        
+
         # Build paper summary for analysis
         paper_summary = study_notes.get('paper_summary', '')
         key_findings = []
-        
+
         # Add main contributions
         for contrib in study_notes.get('main_contributions', []):
             key_findings.append(f"- Contribution: {contrib}")
-        
+
         # Add key concepts
         for concept in study_notes.get('key_concepts', []):
             if isinstance(concept, dict):
-                key_findings.append(f"- Concept: {concept.get('concept', '')} - {concept.get('importance', '')}")
+                key_findings.append(
+                    f"- Concept: {concept.get('concept', '')} - {concept.get('importance', '')}")
             else:
                 key_findings.append(f"- Concept: {concept}")
-        
+
         # Add top findings from bits
-        high_confidence_bits = [b for b in all_bits if b.get('confidence') == 'high'][:10]
+        high_confidence_bits = [
+            b for b in all_bits if b.get('confidence') == 'high'][:10]
         for bit in high_confidence_bits:
-            key_findings.append(f"- {bit.get('type', 'Finding').title()}: {bit.get('title', '')} - {bit.get('description', '')[:100]}")
-        
+            key_findings.append(
+                f"- {bit.get('type', 'Finding').title()}: {bit.get('title', '')} - {bit.get('description', '')[:100]}")
+
         # Format current knowledge for prompt
         def format_list(items, max_items=10):
             if not items:
@@ -850,9 +873,10 @@ Return a JSON object:
             if isinstance(items[0], dict):
                 return "\n".join([f"- {json.dumps(item)}" for item in items])
             return "\n".join([f"- {item}" for item in items])
-        
-        mindset_str = json.dumps(current_mindset, indent=2) if current_mindset else "(no current mindset recorded)"
-        
+
+        mindset_str = json.dumps(
+            current_mindset, indent=2) if current_mindset else "(no current mindset recorded)"
+
         prompt = ENLIGHTENMENT_PROMPT.format(
             paper_name=paper_name,
             paper_summary=paper_summary,
@@ -863,18 +887,18 @@ Return a JSON object:
             challenges=format_list(challenges),
             current_mindset=mindset_str
         )
-        
+
         response = get_chat_completion([
             {"role": "system", "content": "You are a critical intellectual assessor. Evaluate papers rigorously against existing knowledge. Always respond with valid JSON."},
             {"role": "user", "content": prompt}
         ], temperature=0.5)
-        
+
         try:
             return self._parse_json_response(response)
         except Exception as e:
             print(f"   ⚠️ Error analyzing enlightenment: {e}")
             return None
-    
+
     def _parse_json_response(self, response: str) -> Dict:
         """Parse JSON from LLM response, handling common issues."""
         # Try direct parse
@@ -882,7 +906,7 @@ Return a JSON object:
             return json.loads(response)
         except json.JSONDecodeError:
             pass
-        
+
         # Try to extract JSON from markdown code block
         import re
         json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response)
@@ -891,7 +915,7 @@ Return a JSON object:
                 return json.loads(json_match.group(1))
             except json.JSONDecodeError:
                 pass
-        
+
         # Try to find JSON object
         json_match = re.search(r'\{[\s\S]*\}', response)
         if json_match:
@@ -899,32 +923,34 @@ Return a JSON object:
                 return json.loads(json_match.group(0))
             except json.JSONDecodeError:
                 pass
-        
-        raise ValueError(f"Could not parse JSON from response: {response[:200]}...")
-    
+
+        raise ValueError(
+            f"Could not parse JSON from response: {response[:200]}...")
+
     def save_study_result(self, result: Dict, schedule_name: str) -> Dict[str, Path]:
         """
         Save study results to appropriate locations.
-        
+
         Returns paths to saved files.
         """
         notes_dir = self.schedule_root / 'notes' / schedule_name
         knowledge_dir = self.schedule_root / 'knowledge' / schedule_name
-        
+
         notes_dir.mkdir(parents=True, exist_ok=True)
         knowledge_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Generate filenames based on paper name
         base_name = Path(result['paper']['file_name']).stem
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
+
         # Save full study result as notes
         notes_path = notes_dir / f"{base_name}_{timestamp}_notes.json"
         with open(notes_path, 'w') as f:
             json.dump(result, f, indent=2)
-        
+
         # Save knowledge bits separately with metadata
-        knowledge_path = knowledge_dir / f"{base_name}_{timestamp}_knowledge.json"
+        knowledge_path = knowledge_dir / \
+            f"{base_name}_{timestamp}_knowledge.json"
         knowledge_data = {
             "source": result['paper'],
             "extracted_at": result['studied_at'],
@@ -941,15 +967,15 @@ Return a JSON object:
         }
         with open(knowledge_path, 'w') as f:
             json.dump(knowledge_data, f, indent=2)
-        
+
         print(f"   💾 Saved notes to: {notes_path.name}")
         print(f"   💾 Saved knowledge to: {knowledge_path.name}")
-        
+
         return {
             "notes": notes_path,
             "knowledge": knowledge_path
         }
-    
+
     def _count_by_type(self, bits: List[Dict]) -> Dict[str, int]:
         """Count knowledge bits by type."""
         counts = {}
@@ -957,7 +983,7 @@ Return a JSON object:
             t = bit.get('type', 'unknown')
             counts[t] = counts.get(t, 0) + 1
         return counts
-    
+
     def _count_by_confidence(self, bits: List[Dict]) -> Dict[str, int]:
         """Count knowledge bits by confidence level."""
         counts = {}

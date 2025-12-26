@@ -1,3 +1,4 @@
+from utils.knowledge_base import KnowledgeBase
 import unittest
 from unittest.mock import patch, mock_open
 import sys
@@ -5,8 +6,6 @@ from pathlib import Path
 
 # Add src to python path
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
-
-from utils.knowledge_base import KnowledgeBase
 
 
 class TestKnowledgeBase(unittest.TestCase):

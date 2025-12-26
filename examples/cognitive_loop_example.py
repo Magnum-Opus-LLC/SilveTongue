@@ -16,20 +16,19 @@ Usage:
     python examples/cognitive_loop_example.py "quantum computing" "understand quantum algorithms"
 """
 
+from src.actions.cognitive_loop import (
+    CognitiveLoop,
+    learn,
+    learn_nonstop,
+    run_forever,
+    start_learning,
+    resume_learning
+)
 import sys
 import os
 
 # Add src to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from src.actions.cognitive_loop import (
-    CognitiveLoop, 
-    learn, 
-    learn_nonstop,
-    run_forever,
-    start_learning, 
-    resume_learning
-)
 
 
 def demo_full_learning():
@@ -50,7 +49,7 @@ def demo_full_learning():
 ║                                                                      ║
 ╚══════════════════════════════════════════════════════════════════════╝
     """)
-    
+
     # Get topic and goal
     if len(sys.argv) >= 3:
         topic = sys.argv[1]
@@ -58,14 +57,14 @@ def demo_full_learning():
     else:
         topic = "machine learning in chemical engineering"
         goal = "Understand how ML is being applied to optimize chemical processes"
-    
+
     print(f"\n📚 Topic: {topic}")
     print(f"🎯 Goal: {goal}")
     print("\n" + "="*70)
-    
+
     # Create and run the cognitive loop
     loop = CognitiveLoop('student', verbose=True)
-    
+
     # Configure the loop
     loop.configure(
         max_papers_per_search=15,
@@ -75,18 +74,18 @@ def demo_full_learning():
         year_from=2018,    # Recent papers
         auto_save=True
     )
-    
+
     # Run the learning journey
     result = loop.learn(
         topic=topic,
         goal=goal,
         max_iterations=2  # Limit iterations for demo
     )
-    
+
     # Print summary report
     print("\n")
     print(loop.get_summary_report())
-    
+
     return result
 
 
@@ -95,33 +94,33 @@ def demo_step_by_step():
     print("\n" + "="*70)
     print("📍 STEP-BY-STEP MODE")
     print("="*70)
-    
+
     loop = CognitiveLoop('student', verbose=True)
-    
+
     loop.configure(
         max_papers_per_search=10,
         max_papers_to_study=2,
         search_depth=1
     )
-    
+
     # Start the loop
     loop.start(
         topic="transformer neural networks",
         goal="Understand the attention mechanism"
     )
-    
+
     # Execute each phase manually
     print("\n[Press Enter to execute each phase...]")
-    
+
     phases = ['SEARCH', 'STUDY', 'THINK', 'REFLECT', 'UPDATE', 'EXPAND']
-    
+
     for expected_phase in phases:
         input(f"\n→ Execute {expected_phase} phase? ")
         state = loop.step()
-        
+
         if state.phase.value == 'complete':
             break
-    
+
     return loop.get_state()
 
 
@@ -130,21 +129,21 @@ def demo_resume():
     print("\n" + "="*70)
     print("📂 SAVED LOOPS")
     print("="*70)
-    
+
     loop = CognitiveLoop('student')
     saved_loops = loop.list_loops()
-    
+
     if not saved_loops:
         print("No saved loops found.")
         return
-    
+
     print("\nAvailable loops:\n")
     for i, l in enumerate(saved_loops[:5]):
         print(f"  {i+1}. [{l['loop_id']}] {l['topic'][:40]}...")
         print(f"      Phase: {l['phase']}, Iteration: {l['iteration']}")
         print(f"      Papers studied: {l['papers_studied']}")
         print()
-    
+
     # Option to resume
     print("To resume a loop, use:")
     print("  loop = resume_learning('student', '<loop_id>')")
@@ -156,7 +155,7 @@ def demo_quick_learn():
     print("\n" + "="*70)
     print("⚡ QUICK LEARN MODE")
     print("="*70)
-    
+
     # One-liner to learn about a topic
     result = learn(
         actor_name='student',
@@ -167,12 +166,12 @@ def demo_quick_learn():
         search_depth=1,
         min_citations=50
     )
-    
+
     print("\n📊 Quick Learn Result:")
     print(f"   Papers studied: {result['statistics']['total_papers_studied']}")
     print(f"   Knowledge bits: {result['statistics']['total_knowledge_bits']}")
     print(f"   Conclusions: {len(result['conclusions'])}")
-    
+
     return result
 
 
@@ -187,19 +186,21 @@ def demo_nonstop_mode():
     - Max iterations reached (safety limit)
     - You press Ctrl+C (graceful save & exit)
     """)
-    
+
     # Get topic
     if len(sys.argv) >= 3:
         topic = sys.argv[1]
         goal = sys.argv[2]
     else:
-        topic = input("Topic [deep learning optimization]: ").strip() or "deep learning optimization"
-        goal = input("Goal [understand key optimization techniques]: ").strip() or "understand key optimization techniques"
-    
+        topic = input("Topic [deep learning optimization]: ").strip(
+        ) or "deep learning optimization"
+        goal = input("Goal [understand key optimization techniques]: ").strip(
+        ) or "understand key optimization techniques"
+
     print(f"\n📚 Topic: {topic}")
     print(f"🎯 Goal: {goal}")
     print("\n⚠️  Press Ctrl+C at any time to gracefully stop and save\n")
-    
+
     loop = CognitiveLoop('student', verbose=True)
     loop.configure(
         max_papers_per_search=10,
@@ -207,13 +208,13 @@ def demo_nonstop_mode():
         search_depth=2,
         min_citations=20
     )
-    
+
     # Custom callback for iteration completion
     def on_iteration(state, iteration):
         print(f"\n📈 Progress callback: Iteration {iteration} done")
         print(f"   Total papers: {state.total_papers_studied}")
         print(f"   Emerging questions: {len(state.emerging_questions)}")
-    
+
     result = loop.learn_nonstop(
         topic=topic,
         goal=goal,
@@ -223,10 +224,10 @@ def demo_nonstop_mode():
         checkpoint_interval=1,
         on_iteration_complete=on_iteration
     )
-    
+
     print("\n")
     print(loop.get_summary_report())
-    
+
     return result
 
 
@@ -243,25 +244,25 @@ def demo_forever_mode():
     
     ⚠️  This will run FOREVER. Press Ctrl+C to stop.
     """)
-    
+
     confirm = input("Start forever mode? [y/N]: ").strip().lower()
     if confirm != 'y':
         print("Cancelled.")
         return
-    
+
     # Initial topics to explore
     topics = [
         "transformer attention mechanisms",
         "graph neural networks for chemistry",
         "reinforcement learning in process control"
     ]
-    
+
     print(f"\n📚 Initial topics: {len(topics)}")
     for t in topics:
         print(f"   • {t}")
-    
+
     print("\n🚀 Starting forever mode...\n")
-    
+
     loop = CognitiveLoop('student', verbose=True)
     loop.configure(
         max_papers_per_search=8,
@@ -269,11 +270,11 @@ def demo_forever_mode():
         search_depth=1,
         min_citations=30
     )
-    
+
     # Custom goal generator
     def generate_goal(topic):
         return f"Develop comprehensive understanding of {topic} and identify practical applications"
-    
+
     loop.run_forever(
         topics=topics,
         goal_generator=generate_goal,
@@ -301,7 +302,7 @@ def main():
 │                                                                      │
 ╰──────────────────────────────────────────────────────────────────────╯
     """)
-    
+
     print("Select demo mode:")
     print("  1. Full Learning Journey (limited iterations)")
     print("  2. Step-by-Step Control")
@@ -310,12 +311,12 @@ def main():
     print("  5. 🌀 Forever Mode (runs indefinitely)")
     print("  6. View Saved Loops")
     print("  7. Exit")
-    
+
     try:
         choice = input("\nChoice [1-7]: ").strip() or "1"
     except (EOFError, KeyboardInterrupt):
         choice = "1"
-    
+
     if choice == "1":
         demo_full_learning()
     elif choice == "2":

@@ -45,14 +45,15 @@ class TrainingJob:
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     error: Optional[str] = None
-    
+
     # Training config
     base_model: str = "meta-llama/Llama-3.2-3B-Instruct"
-    base_adapter: Optional[str] = None  # Path to existing LoRA adapter for LoRA-on-LoRA
+    # Path to existing LoRA adapter for LoRA-on-LoRA
+    base_adapter: Optional[str] = None
     train_file: str = ""
     val_file: str = ""
     output_dir: str = ""
-    
+
     # Hyperparameters
     lora_r: int = 16
     lora_alpha: int = 32
@@ -62,60 +63,65 @@ class TrainingJob:
     batch_size: int = 4
     gradient_accumulation_steps: int = 4
     max_seq_length: int = 2048
-    
+
     # Results
     final_loss: Optional[float] = None
     adapter_path: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
 class TrainingConfig:
     """Server configuration."""
+
     def __init__(self):
-        self.data_dir = os.environ.get('SILVERTONGUE_DATA_DIR', '/mnt/nas/silvertongue/array')
-        self.output_base = os.environ.get('SILVERTONGUE_OUTPUT_DIR', '/mnt/nas/silvertongue/models')
-        self.default_base_model = os.environ.get('SILVERTONGUE_BASE_MODEL', 'meta-llama/Llama-3.2-3B-Instruct')
+        self.data_dir = os.environ.get(
+            'SILVERTONGUE_DATA_DIR', '/mnt/nas/silvertongue/array')
+        self.output_base = os.environ.get(
+            'SILVERTONGUE_OUTPUT_DIR', '/mnt/nas/silvertongue/models')
+        self.default_base_model = os.environ.get(
+            'SILVERTONGUE_BASE_MODEL', 'meta-llama/Llama-3.2-3B-Instruct')
         self.max_concurrent_jobs = 1  # GPU memory constraint
-        
+
+
 config = TrainingConfig()
 
 
 def run_training(job: TrainingJob):
     """Execute the actual LoRA training."""
     global current_job
-    
+
     try:
         job.status = "running"
         job.started_at = datetime.now().isoformat()
-        
+
         # Create output directory
         output_dir = Path(config.output_base) / job.actor_name / job.job_id
         output_dir.mkdir(parents=True, exist_ok=True)
         job.output_dir = str(output_dir)
-        
+
         # Generate training script
         training_script = generate_training_script(job)
         script_path = output_dir / "train.py"
         with open(script_path, 'w') as f:
             f.write(training_script)
-        
+
         # Generate config file
         config_path = output_dir / "training_config.json"
         with open(config_path, 'w') as f:
             json.dump(job.to_dict(), f, indent=2)
-        
+
         # Run training
         print(f"[{job.job_id}] Starting training for actor: {job.actor_name}")
-        
+
         result = subprocess.run(
             ['python', str(script_path)],
             cwd=str(output_dir),
             capture_output=True,
             text=True
         )
-        
+
         if result.returncode == 0:
             job.status = "completed"
             job.progress = 100.0
@@ -125,17 +131,17 @@ def run_training(job: TrainingJob):
             job.status = "failed"
             job.error = result.stderr[-2000:] if result.stderr else "Unknown error"
             print(f"[{job.job_id}] Training failed: {job.error}")
-            
+
     except Exception as e:
         job.status = "failed"
         job.error = str(e)
         print(f"[{job.job_id}] Training error: {e}")
-        
+
     finally:
         job.completed_at = datetime.now().isoformat()
         with job_lock:
             current_job = None
-        
+
         # Check for queued jobs
         process_queue()
 
@@ -143,11 +149,11 @@ def run_training(job: TrainingJob):
 def process_queue():
     """Process the next job in queue if GPU is available."""
     global current_job
-    
+
     with job_lock:
         if current_job is not None:
             return
-            
+
         # Find next queued job
         for job_id, job in training_jobs.items():
             if job.status == "queued":
@@ -161,7 +167,7 @@ def process_queue():
 def generate_training_script(job: TrainingJob) -> str:
     """Generate a training script for the job."""
     base_adapter_line = f'BASE_ADAPTER = "{job.base_adapter}"' if job.base_adapter else 'BASE_ADAPTER = None  # No base adapter (training from scratch)'
-    
+
     return f'''#!/usr/bin/env python3
 """
 Auto-generated LoRA Training Script for {job.actor_name}
@@ -356,28 +362,29 @@ def health():
 def submit_training_job():
     """Submit a new LoRA training job."""
     data = request.json
-    
+
     if not data.get('actor_name'):
         return jsonify({"error": "actor_name is required"}), 400
-    
+
     actor_name = data['actor_name']
-    
+
     # Locate training data
     train_file = data.get('train_file')
     val_file = data.get('val_file')
-    
+
     if not train_file:
         # Try to find in standard location
-        data_path = Path(config.data_dir) / "data" / actor_name / "lora_training"
+        data_path = Path(config.data_dir) / "data" / \
+            actor_name / "lora_training"
         train_file = str(data_path / f"{actor_name}_lora_train.jsonl")
         val_file = str(data_path / f"{actor_name}_lora_val.jsonl")
-    
+
     if not Path(train_file).exists():
         return jsonify({
             "error": f"Training file not found: {train_file}",
             "hint": "Run the sleep cycle first to generate training data"
         }), 404
-    
+
     # Create job
     job_id = str(uuid.uuid4())[:8]
     job = TrainingJob(
@@ -386,7 +393,8 @@ def submit_training_job():
         train_file=train_file,
         val_file=val_file if Path(val_file).exists() else train_file,
         base_model=data.get('base_model', config.default_base_model),
-        base_adapter=data.get('base_adapter'),  # LoRA-on-LoRA: existing adapter path
+        # LoRA-on-LoRA: existing adapter path
+        base_adapter=data.get('base_adapter'),
         lora_r=data.get('lora_r', 16),
         lora_alpha=data.get('lora_alpha', 32),
         lora_dropout=data.get('lora_dropout', 0.05),
@@ -396,10 +404,10 @@ def submit_training_job():
         gradient_accumulation_steps=data.get('gradient_accumulation_steps', 4),
         max_seq_length=data.get('max_seq_length', 2048),
     )
-    
+
     training_jobs[job_id] = job
     process_queue()
-    
+
     return jsonify({
         "job_id": job_id,
         "status": job.status,
@@ -429,7 +437,7 @@ def get_job(job_id):
     """Get status of a specific job."""
     if job_id not in training_jobs:
         return jsonify({"error": "Job not found"}), 404
-    
+
     return jsonify(training_jobs[job_id].to_dict())
 
 
@@ -438,15 +446,15 @@ def cancel_job(job_id):
     """Cancel a queued job."""
     if job_id not in training_jobs:
         return jsonify({"error": "Job not found"}), 404
-    
+
     job = training_jobs[job_id]
-    
+
     if job.status == "running":
         return jsonify({"error": "Cannot cancel running job"}), 400
-    
+
     if job.status in ["completed", "failed"]:
         return jsonify({"error": "Job already finished"}), 400
-    
+
     job.status = "cancelled"
     return jsonify({"message": "Job cancelled", "job": job.to_dict()})
 
@@ -456,7 +464,7 @@ def list_models():
     """List available trained models/adapters."""
     models = []
     output_base = Path(config.output_base)
-    
+
     if output_base.exists():
         for actor_dir in output_base.iterdir():
             if actor_dir.is_dir():
@@ -468,14 +476,14 @@ def list_models():
                         if info_file.exists():
                             with open(info_file) as f:
                                 info = json.load(f)
-                        
+
                         models.append({
                             "actor_name": actor_dir.name,
                             "job_id": job_dir.name,
                             "adapter_path": str(adapter_path),
                             "info": info
                         })
-    
+
     return jsonify({"models": models})
 
 
@@ -491,7 +499,7 @@ def get_config():
         "mistralai/Mistral-7B-Instruct-v0.3",
         "nvidia/Nemotron-Mini-4B-Instruct",
     ]
-    
+
     return jsonify({
         "data_dir": config.data_dir,
         "output_base": config.output_base,
@@ -505,14 +513,14 @@ def get_config():
 def update_config():
     """Update server configuration."""
     data = request.json
-    
+
     if 'data_dir' in data:
         config.data_dir = data['data_dir']
     if 'output_base' in data:
         config.output_base = data['output_base']
     if 'default_base_model' in data:
         config.default_base_model = data['default_base_model']
-    
+
     return jsonify({"message": "Configuration updated", "config": get_config().json})
 
 
@@ -526,23 +534,28 @@ def torch_gpu_available() -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Silvertongue LoRA Training Server')
+    parser = argparse.ArgumentParser(
+        description='Silvertongue LoRA Training Server')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
-    parser.add_argument('--port', type=int, default=5050, help='Port to listen on')
-    parser.add_argument('--data-dir', help='Path to shared data directory (NAS)')
+    parser.add_argument('--port', type=int, default=5050,
+                        help='Port to listen on')
+    parser.add_argument(
+        '--data-dir', help='Path to shared data directory (NAS)')
     parser.add_argument('--output-dir', help='Path to save trained models')
-    parser.add_argument('--base-model', help='Default base model for fine-tuning')
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    
+    parser.add_argument(
+        '--base-model', help='Default base model for fine-tuning')
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable debug mode')
+
     args = parser.parse_args()
-    
+
     if args.data_dir:
         config.data_dir = args.data_dir
     if args.output_dir:
         config.output_base = args.output_dir
     if args.base_model:
         config.default_base_model = args.base_model
-    
+
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║           Silvertongue LoRA Training Server                  ║
@@ -553,7 +566,7 @@ def main():
 ║  GPU Available:    {str(torch_gpu_available()):<40} ║
 ╚══════════════════════════════════════════════════════════════╝
     """)
-    
+
     app.run(host=args.host, port=args.port, debug=args.debug)
 
 

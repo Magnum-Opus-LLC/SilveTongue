@@ -5,6 +5,7 @@ Flask app with Blueprint routes. Handles the src/ namespace conflict between
 dashboard/src/ and project/src/ by using importlib for dashboard modules.
 """
 
+from flask import Flask
 import sys
 from pathlib import Path
 import importlib.util
@@ -18,9 +19,9 @@ if str(project_root) not in sys.path:
 if str(dashboard_root) not in sys.path:
     sys.path.insert(1, str(dashboard_root))
 
-from flask import Flask
 
 # Load dashboard routes via importlib to avoid src/ conflict
+
 def _load_module(name, path):
     """Load a module from a specific path."""
     spec = importlib.util.spec_from_file_location(name, path)
@@ -28,6 +29,7 @@ def _load_module(name, path):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
 
 # Load the routes package
 _routes_init = dashboard_root / 'src' / 'routes' / '__init__.py'

@@ -72,7 +72,7 @@ def api_chat(actor_name):
         knowledge_base_mod = import_project_module('src.utils.knowledge_base')
         subconscious_mod = import_project_module('src.thoughts.subconscious')
         conscious_mod = import_project_module('src.thoughts.conscious')
-        
+
         get_chat_completion = chat_utils.get_chat_completion
         KnowledgeBase = knowledge_base_mod.KnowledgeBase
         SilvertongueSubconscious = subconscious_mod.SilvertongueSubconscious

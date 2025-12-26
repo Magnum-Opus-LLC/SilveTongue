@@ -25,7 +25,7 @@ def get_all_studied_papers():
     Scan all actors' cognitive_loops to build a map of studied papers.
     Returns dict mapping normalized_title -> {actors: [...], studied_at: ..., loop_topic: ...}
     Also maps by filename for PDFs that were actually downloaded.
-    
+
     Enhanced to also check:
     - discovered_papers in state (papers found during learning)
     - history entries for study actions with timestamps
@@ -35,30 +35,31 @@ def get_all_studied_papers():
     actors_dir = array_dir / 'actors'
     studied_map = {}  # normalized_title -> study info
     filename_map = {}  # filename -> study info (for direct PDF matches)
-    learning_sessions = []  # Track (actor, start_time, end_time, topic) for timestamp matching
-    
+    # Track (actor, start_time, end_time, topic) for timestamp matching
+    learning_sessions = []
+
     if not actors_dir.exists():
         return studied_map, filename_map
-    
+
     for actor_dir in actors_dir.iterdir():
         if not actor_dir.is_dir() or actor_dir.name.startswith('.'):
             continue
-        
+
         actor_name = actor_dir.name
         loops_dir = array_dir / 'data' / actor_name / 'cognitive_loops'
-        
+
         if not loops_dir.exists():
             continue
-        
+
         for loop_file in loops_dir.glob('loop_*.json'):
             try:
                 with open(loop_file, 'r') as f:
                     data = json.load(f)
-                
+
                 state = data.get('state', {})
                 history = data.get('history', [])
                 loop_topic = state.get('topic', 'Unknown')
-                
+
                 # Track learning session time range for PDF timestamp correlation
                 started_at = state.get('started_at', '')
                 updated_at = state.get('updated_at', '')
@@ -70,7 +71,7 @@ def get_all_studied_papers():
                         'topic': loop_topic,
                         'total_studied': state.get('total_papers_studied', 0)
                     })
-                
+
                 # Process knowledge_bits for source_file references
                 for kb in state.get('knowledge_bits', []):
                     source_file = kb.get('source_file', '')
@@ -89,7 +90,7 @@ def get_all_studied_papers():
                         info['study_count'] += 1
                         if loop_topic and loop_topic not in info['topics']:
                             info['topics'].append(loop_topic)
-                
+
                 # Process discovered_papers - these are papers found and potentially studied
                 for paper in state.get('discovered_papers', []):
                     title = paper.get('title', '')
@@ -98,7 +99,7 @@ def get_all_studied_papers():
                     normalized = normalize_title(title)
                     if not normalized:
                         continue
-                    
+
                     # Mark as discovered (not confirmed studied, but likely if total_papers_studied > 0)
                     if state.get('total_papers_studied', 0) > 0:
                         if normalized not in studied_map:
@@ -115,12 +116,12 @@ def get_all_studied_papers():
                             info['actors'].append(actor_name)
                         if loop_topic and loop_topic not in info['topics']:
                             info['topics'].append(loop_topic)
-                
+
                 for paper_entry in state.get('studied_papers', []):
                     paper = paper_entry.get('paper', {}) or {}
                     title = paper.get('title', '')
                     studied_at = paper_entry.get('studied_at', '')
-                    
+
                     # Check for actual PDF file path in study_result
                     study_result = paper_entry.get('study_result', {})
                     if study_result:
@@ -144,15 +145,15 @@ def get_all_studied_papers():
                                     info['last_studied'] = studied_at
                                 if loop_topic and loop_topic not in info['topics']:
                                     info['topics'].append(loop_topic)
-                    
+
                     # Also track by title for fuzzy matching
                     if not title:
                         continue
-                    
+
                     normalized = normalize_title(title)
                     if not normalized:
                         continue
-                    
+
                     if normalized not in studied_map:
                         studied_map[normalized] = {
                             'actors': [],
@@ -162,7 +163,7 @@ def get_all_studied_papers():
                             'original_title': title,
                             'status': 'studied'
                         }
-                    
+
                     info = studied_map[normalized]
                     info['status'] = 'studied'  # Confirmed studied
                     if actor_name not in info['actors']:
@@ -172,10 +173,10 @@ def get_all_studied_papers():
                         info['last_studied'] = studied_at
                     if loop_topic and loop_topic not in info['topics']:
                         info['topics'].append(loop_topic)
-                        
+
             except Exception as e:
                 continue
-    
+
     # Now correlate PDF file timestamps with learning sessions
     # This helps identify PDFs that were downloaded during learning
     pdf_cache_dir = get_pdf_cache_dir()
@@ -185,7 +186,7 @@ def get_all_studied_papers():
                 # Get file modification time
                 mtime = pdf_file.stat().st_mtime
                 pdf_time = datetime.fromtimestamp(mtime).isoformat()
-                
+
                 # Check if this PDF was created during any learning session
                 for session in learning_sessions:
                     if session['start'] <= pdf_time <= session['end']:
@@ -208,7 +209,7 @@ def get_all_studied_papers():
                         break  # Found matching session
             except Exception:
                 continue
-    
+
     return studied_map, filename_map
 
 
@@ -220,10 +221,10 @@ def api_pdf_cache_stats():
         book = get_pdf_book()
         book.load()
         stats = book.get_stats()
-        
+
         # Get live study count from cognitive loops (more accurate than PDF Book cache)
         studied_map, filename_map = get_all_studied_papers()
-        
+
         # Count PDFs that match studied papers
         pdf_cache_dir = get_pdf_cache_dir()
         studied_count = 0
@@ -235,14 +236,15 @@ def api_pdf_cache_stats():
                     studied_count += 1
                     continue
                 # Check by title match
-                title = filename.split('_', 1)[-1].replace('.pdf', '').replace('_', ' ')
+                title = filename.split(
+                    '_', 1)[-1].replace('.pdf', '').replace('_', ' ')
                 normalized = normalize_title(title)
                 if normalized in studied_map:
                     studied_count += 1
-        
+
         valid_pdfs = stats.get('valid_pdfs', 0)
         duplicates = stats.get('duplicates', 0)
-        
+
         return jsonify({
             'exists': True,
             'path': str(get_pdf_cache_dir()),
@@ -280,17 +282,17 @@ _rebuild_status = {
 @pdf_cache_bp.route('/api/pdf-cache/rebuild', methods=['POST'])
 def api_pdf_cache_rebuild():
     """Rebuild the PDF index with validation and duplicate detection.
-    
+
     OPTIONS:
     - cleanup: true to delete invalid and duplicate PDFs from disk
     - background: true for non-blocking rebuild
     - force: true to proceed even if learning is in progress
-    
+
     WARNING: This can interrupt learning processes if run concurrently.
     """
     import threading
     from dashboard.utils import active_loops
-    
+
     # Handle both JSON and form data
     if request.is_json:
         data = request.json or {}
@@ -299,16 +301,16 @@ def api_pdf_cache_rebuild():
         # Also check query params
         if not data:
             data = request.args.to_dict()
-    
+
     background = data.get('background', False)
     cleanup = data.get('cleanup', False)
-    
+
     # Convert string 'true'/'false' to bool (from form/query params)
     if isinstance(background, str):
         background = background.lower() == 'true'
     if isinstance(cleanup, str):
         cleanup = cleanup.lower() == 'true'
-    
+
     # Warn if learning is in progress
     if active_loops:
         active_actors = list(active_loops.keys())
@@ -320,18 +322,19 @@ def api_pdf_cache_rebuild():
                 'warning': f'Learning in progress for: {active_actors}. PDF scanning may interfere. Use force=true to proceed anyway.',
                 'active_loops': active_actors
             }), 409  # Conflict
-    
+
     if _rebuild_status['in_progress']:
         return jsonify({
             'status': 'already_running',
             'started_at': _rebuild_status['started_at']
         })
-    
+
     def do_rebuild():
         _rebuild_status['in_progress'] = True
         _rebuild_status['started_at'] = datetime.now().isoformat()
         try:
-            result = rebuild_pdf_book(validate=True, detect_duplicates=True, cleanup=cleanup)
+            result = rebuild_pdf_book(
+                validate=True, detect_duplicates=True, cleanup=cleanup)
             clear_pdf_stock_cache()
             _rebuild_status['result'] = {
                 'success': True,
@@ -347,7 +350,7 @@ def api_pdf_cache_rebuild():
             _rebuild_status['result'] = {'error': str(e)}
         finally:
             _rebuild_status['in_progress'] = False
-    
+
     if background:
         threading.Thread(target=do_rebuild, daemon=True).start()
         return jsonify({
@@ -355,7 +358,7 @@ def api_pdf_cache_rebuild():
             'message': 'Rebuild started in background. Check /api/pdf-cache/rebuild/status for progress.',
             'cleanup_enabled': cleanup
         })
-    
+
     try:
         do_rebuild()
         return jsonify(_rebuild_status['result'])
@@ -380,10 +383,10 @@ def api_pdf_cache_list():
         # Use PDF Book (has validation info)
         book = get_pdf_book()
         book.load()
-        
+
         # Get studied papers maps (by title and by filename)
         studied_map, filename_map = get_all_studied_papers()
-        
+
         pdfs = []
         for filename, info in book._data.get('pdfs', {}).items():
             # Skip invalid PDFs
@@ -392,9 +395,9 @@ def api_pdf_cache_list():
             # Skip duplicates
             if info.get('is_duplicate'):
                 continue
-                
+
             normalized = info.get('normalized_title', '')
-            
+
             # Check study status from multiple sources:
             # 1. Direct filename match (most reliable)
             # 2. Title-based match
@@ -402,13 +405,14 @@ def api_pdf_cache_list():
             filename_study = filename_map.get(filename, {})
             title_study = studied_map.get(normalized, {})
             book_study = info.get('study_info', {})
-            
-            is_studied = bool(filename_study) or bool(title_study) or book_study.get('studied', False)
-            
+
+            is_studied = bool(filename_study) or bool(
+                title_study) or book_study.get('studied', False)
+
             # Merge study info from all sources
             studied_by = list(set(
-                filename_study.get('actors', []) + 
-                title_study.get('actors', []) + 
+                filename_study.get('actors', []) +
+                title_study.get('actors', []) +
                 book_study.get('studied_by', [])
             ))
             study_count = max(
@@ -426,7 +430,7 @@ def api_pdf_cache_list():
                 title_study.get('topics', []) +
                 book_study.get('topics', [])
             ))
-            
+
             pdfs.append({
                 'filename': filename,
                 'title': info.get('title', ''),
@@ -440,14 +444,14 @@ def api_pdf_cache_list():
                 'last_studied': last_studied,
                 'study_topics': topics
             })
-        
+
         # Sort by title
         pdfs.sort(key=lambda x: x.get('title', '').lower())
-        
+
         # Get stats from PDF Book
         stats = book.get_stats()
         studied_count = sum(1 for p in pdfs if p['studied'])
-        
+
         return jsonify({
             'total': len(pdfs),
             'studied_count': studied_count,
@@ -512,7 +516,7 @@ def api_pdf_book_stats():
         book = get_pdf_book()
         book.load()
         stats = book.get_stats()
-        
+
         return jsonify({
             'success': True,
             'stats': stats,
@@ -533,13 +537,13 @@ def api_pdf_book_rebuild():
         data = request.get_json() or {}
         validate = data.get('validate', True)
         detect_duplicates = data.get('detect_duplicates', True)
-        
-        result = rebuild_pdf_book(validate=validate, 
-                                   detect_duplicates=detect_duplicates)
-        
+
+        result = rebuild_pdf_book(validate=validate,
+                                  detect_duplicates=detect_duplicates)
+
         # Clear old pdf_stock cache too
         clear_pdf_stock_cache()
-        
+
         return jsonify({
             'success': True,
             'result': result
@@ -560,12 +564,14 @@ def api_pdf_book_list():
         - status_filter: 'valid' | 'invalid' | 'duplicate' | 'studied' | 'not_studied'
     """
     try:
-        include_invalid = request.args.get('include_invalid', 'false').lower() == 'true'
-        include_duplicates = request.args.get('include_duplicates', 'false').lower() == 'true'
+        include_invalid = request.args.get(
+            'include_invalid', 'false').lower() == 'true'
+        include_duplicates = request.args.get(
+            'include_duplicates', 'false').lower() == 'true'
         status_filter = request.args.get('status_filter', '')
-        
+
         book = get_pdf_book()
-        
+
         # Get base list
         if status_filter == 'invalid':
             pdfs = book.get_invalid_pdfs()
@@ -576,19 +582,19 @@ def api_pdf_book_list():
                 include_invalid=include_invalid or status_filter == 'invalid',
                 include_duplicates=include_duplicates or status_filter == 'duplicate'
             )
-        
+
         # Additional filtering
         if status_filter == 'studied':
             pdfs = [p for p in pdfs if p.get('study_info', {}).get('studied')]
         elif status_filter == 'not_studied':
-            pdfs = [p for p in pdfs 
-                    if not p.get('study_info', {}).get('studied') 
+            pdfs = [p for p in pdfs
+                    if not p.get('study_info', {}).get('studied')
                     and p.get('status') == 'valid'
                     and not p.get('is_duplicate')]
-        
+
         # Get stats
         stats = book.get_stats()
-        
+
         return jsonify({
             'success': True,
             'total': len(pdfs),
@@ -607,7 +613,7 @@ def api_pdf_book_invalid():
     try:
         book = get_pdf_book()
         invalid_pdfs = book.get_invalid_pdfs()
-        
+
         return jsonify({
             'success': True,
             'count': len(invalid_pdfs),
@@ -623,7 +629,7 @@ def api_pdf_book_duplicates():
     try:
         book = get_pdf_book()
         duplicates = book.get_duplicates()
-        
+
         # Group by original file for easier display
         grouped = {}
         for dup in duplicates:
@@ -638,7 +644,7 @@ def api_pdf_book_duplicates():
                 'size_mb': dup.get('size_mb'),
                 'title': dup.get('title')
             })
-        
+
         return jsonify({
             'success': True,
             'count': len(duplicates),
@@ -656,9 +662,9 @@ def api_pdf_book_search():
         title = request.args.get('title', '')
         if not title:
             return jsonify({'success': False, 'error': 'title parameter required'}), 400
-        
+
         result = find_pdf(title)
-        
+
         if result:
             return jsonify({
                 'success': True,
@@ -684,12 +690,12 @@ def api_pdf_book_cleanup_invalid():
     try:
         data = request.get_json() or {}
         dry_run = data.get('dry_run', True)
-        
+
         book = get_pdf_book()
         removed = book.remove_invalid(dry_run=dry_run)
-        
+
         action = "Would remove" if dry_run else "Removed"
-        
+
         return jsonify({
             'success': True,
             'dry_run': dry_run,
@@ -709,12 +715,12 @@ def api_pdf_book_cleanup_duplicates():
     try:
         data = request.get_json() or {}
         dry_run = data.get('dry_run', True)
-        
+
         book = get_pdf_book()
         removed = book.remove_duplicates(dry_run=dry_run)
-        
+
         action = "Would remove" if dry_run else "Removed"
-        
+
         return jsonify({
             'success': True,
             'dry_run': dry_run,
@@ -731,13 +737,13 @@ def api_pdf_book_get_pdf(filename):
     try:
         book = get_pdf_book()
         pdf_info = book.get_pdf(filename)
-        
+
         if not pdf_info:
             return jsonify({
-                'success': False, 
+                'success': False,
                 'error': 'PDF not found in book'
             }), 404
-        
+
         return jsonify({
             'success': True,
             'pdf': pdf_info
@@ -754,10 +760,10 @@ def api_pdf_book_update_metadata(filename):
     """
     try:
         data = request.get_json() or {}
-        
+
         book = get_pdf_book()
         success = book.update_metadata(filename, data)
-        
+
         if success:
             return jsonify({
                 'success': True,
@@ -782,16 +788,16 @@ def api_pdf_book_mark_studied(filename):
         data = request.get_json() or {}
         actor = data.get('actor', '')
         topic = data.get('topic', '')
-        
+
         if not actor:
             return jsonify({
-                'success': False, 
+                'success': False,
                 'error': 'actor parameter required'
             }), 400
-        
+
         book = get_pdf_book()
         success = book.mark_studied(filename, actor, topic)
-        
+
         if success:
             return jsonify({
                 'success': True,

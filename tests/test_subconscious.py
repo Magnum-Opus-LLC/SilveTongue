@@ -1,3 +1,4 @@
+from thoughts.subconscious import SilvertongueSubconscious
 import unittest
 from unittest.mock import patch, MagicMock
 import sys
@@ -5,8 +6,6 @@ from pathlib import Path
 
 # Add src to python path
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
-
-from thoughts.subconscious import SilvertongueSubconscious
 
 
 class TestSilvertongueSubconscious(unittest.TestCase):
@@ -26,9 +25,9 @@ class TestSilvertongueSubconscious(unittest.TestCase):
     def test_classify_information(self, mock_chat):
         self.mock_kb.get_experiences.return_value = ["Experience 1"]
         mock_chat.return_value = "Chemistry"
-        
+
         domain = self.agent.classify_information("H2O is water.")
-        
+
         self.assertEqual(domain, "Chemistry")
         # Verify chat completion was called with experience in prompt
         args, _ = mock_chat.call_args
@@ -38,9 +37,9 @@ class TestSilvertongueSubconscious(unittest.TestCase):
     def test_generate_dynamic_system_prompt(self):
         self.mock_kb.get_values.return_value = ["Value A"]
         self.mock_kb.get_experiences.return_value = ["Exp B"]
-        
+
         prompt = self.agent.generate_dynamic_system_prompt("Physics")
-        
+
         self.assertIn("Value A", prompt)
         self.assertIn("Exp B", prompt)
         self.assertIn("Physics", prompt)

@@ -144,7 +144,7 @@ def api_actor_studied_papers(actor_name):
                         if title in seen_titles:
                             continue
                         seen_titles.add(title)
-                        
+
                         # Check if PDF is cached (pass knowledge_bits for source_file matching)
                         pdf_info = find_cached_pdf(title, knowledge_bits)
 
@@ -168,8 +168,8 @@ def api_actor_studied_papers(actor_name):
                             'pdf_match_type': pdf_info.get('match_type', ''),
                             'status': 'studied'
                         })
-                    
-                    # If no studied_papers but total_papers_studied > 0, 
+
+                    # If no studied_papers but total_papers_studied > 0,
                     # include discovered_papers as "discovered" status
                     # This handles legacy loops where studied_papers was cleared
                     total_studied = state.get('total_papers_studied', 0)
@@ -180,9 +180,9 @@ def api_actor_studied_papers(actor_name):
                             if not title or title in seen_titles:
                                 continue
                             seen_titles.add(title)
-                            
+
                             pdf_info = find_cached_pdf(title, [])
-                            
+
                             papers.append({
                                 'title': title,
                                 'authors': paper.get('authors', paper.get('publication_info', '')),
@@ -201,14 +201,16 @@ def api_actor_studied_papers(actor_name):
                                 'pdf_filename': pdf_info.get('filename', ''),
                                 'pdf_size_mb': pdf_info.get('size_mb', 0),
                                 'pdf_match_type': pdf_info.get('match_type', ''),
-                                'status': 'discovered',  # Mark as discovered (not confirmed studied)
+                                # Mark as discovered (not confirmed studied)
+                                'status': 'discovered',
                                 'citation_count': paper.get('citation_count', 0)
                             })
-                        
+
                         if discovered_papers:
                             files_with_papers += 1
-                            print(f"[studied-papers] {loop_file.name}: {len(discovered_papers)} discovered papers (total_studied={total_studied})")
-                            
+                            print(
+                                f"[studied-papers] {loop_file.name}: {len(discovered_papers)} discovered papers (total_studied={total_studied})")
+
                 except Exception as e:
                     print(f"Error loading {loop_file.name}: {e}")
                     continue
@@ -296,7 +298,8 @@ def api_start_learning(actor_name):
     def run_loop():
         try:
             # Lazy import
-            cognitive_loop = import_project_module('src.actions.cognitive_loop')
+            cognitive_loop = import_project_module(
+                'src.actions.cognitive_loop')
             CognitiveLoop = cognitive_loop.CognitiveLoop
 
             loop = CognitiveLoop(actor_name, verbose=True)

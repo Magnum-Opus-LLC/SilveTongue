@@ -26,9 +26,9 @@ async def search_api(
     """
     # Run the asynchronous search_scholar function in an event loop
     results = await search_scholar(
-            depth, as_q, as_epq, as_oq, as_eq, as_occt,
-            as_sauthors, as_publication, as_ylo, as_yhi, as_sdt, as_rr, as_vis
-        )
+        depth, as_q, as_epq, as_oq, as_eq, as_occt,
+        as_sauthors, as_publication, as_ylo, as_yhi, as_sdt, as_rr, as_vis
+    )
     # Convert each SearchResult dataclass to a dictionary
     return [result.__dict__ for result in results]
 

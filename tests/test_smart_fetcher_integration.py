@@ -52,27 +52,28 @@ print("-"*70)
 
 try:
     result = processor.study_from_url(paper_info, study_config)
-    
+
     print("\n" + "="*70)
     print("RESULT")
     print("="*70)
-    
+
     content_source = result.get('paper', {}).get('content_source', 'unknown')
     print(f"\nContent Source: {content_source}")
-    
+
     if content_source == 'full_pdf':
         print("✅ SUCCESS - Full PDF was obtained and studied")
         pdf_path = result.get('paper', {}).get('pdf_path')
         print(f"   PDF Location: {pdf_path}")
-        
+
         extraction = result.get('extraction', {})
         print(f"   Chunks Processed: {extraction.get('total_chunks', 0)}")
-        print(f"   Knowledge Bits Extracted: {len(extraction.get('knowledge_bits', []))}")
+        print(
+            f"   Knowledge Bits Extracted: {len(extraction.get('knowledge_bits', []))}")
     elif content_source == 'abstract':
         print("⚠️ Only abstract was available")
     else:
         print(f"❌ No content available (source: {content_source})")
-    
+
 except Exception as e:
     print(f"\n❌ Error: {e}")
     import traceback

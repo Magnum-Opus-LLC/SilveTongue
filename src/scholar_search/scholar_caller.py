@@ -32,29 +32,30 @@ USER_AGENTS = [
 
 # Oxylabs proxy configuration
 # Credentials from environment variables: PROXY_USER_NAME, PROXY_PASS
-OXYLABS_COUNTRIES = ['US', 'GB', 'DE', 'FR', 'CA', 'AU', 'JP']  # Rotate through countries
+OXYLABS_COUNTRIES = ['US', 'GB', 'DE', 'FR',
+                     'CA', 'AU', 'JP']  # Rotate through countries
 
 
 def get_oxylabs_proxy(country=None):
     """
     Get Oxylabs proxy URL with credentials from environment variables.
-    
+
     Args:
         country: Country code (e.g., 'US', 'GB'). If None, picks random.
-    
+
     Returns:
         Proxy URL string or None if credentials not set.
     """
     username = os.environ.get('PROXY_USER_NAME')
     password = os.environ.get('PROXY_PASS')
-    
+
     if not username or not password:
         logging.debug("Oxylabs credentials not found in environment variables")
         return None
-    
+
     if country is None:
         country = random.choice(OXYLABS_COUNTRIES)
-    
+
     proxy_url = f"http://customer-{username}-cc-{country}:{password}@pr.oxylabs.io:7777"
     return proxy_url
 
@@ -65,12 +66,14 @@ def test_oxylabs_connection():
     if not proxy:
         logging.warning("Oxylabs credentials not configured")
         return False
-    
+
     try:
         proxies = {"http": proxy, "https": proxy}
-        response = requests.get("https://ip.oxylabs.io/location", proxies=proxies, timeout=15)
+        response = requests.get(
+            "https://ip.oxylabs.io/location", proxies=proxies, timeout=15)
         if response.status_code == 200:
-            logging.info(f"Oxylabs proxy working. Location: {response.text.strip()}")
+            logging.info(
+                f"Oxylabs proxy working. Location: {response.text.strip()}")
             return True
     except Exception as e:
         logging.error(f"Oxylabs proxy test failed: {e}")
@@ -80,7 +83,7 @@ def test_oxylabs_connection():
 # Global proxy manager (for fallback to free proxies if needed)
 class ProxyManager:
     """Manages proxy rotation for avoiding rate limits."""
-    
+
     def __init__(self):
         self._proxies = []
         self._current_index = 0
@@ -89,21 +92,22 @@ class ProxyManager:
         self._fetch_interval = 300  # Refresh proxy list every 5 minutes
         self._use_oxylabs = True  # Prefer Oxylabs
         self._oxylabs_country_index = 0
-    
+
     def get_oxylabs_proxy(self):
         """Get Oxylabs proxy, rotating through countries."""
-        country = OXYLABS_COUNTRIES[self._oxylabs_country_index % len(OXYLABS_COUNTRIES)]
+        country = OXYLABS_COUNTRIES[self._oxylabs_country_index % len(
+            OXYLABS_COUNTRIES)]
         self._oxylabs_country_index += 1
         return get_oxylabs_proxy(country)
-    
+
     def fetch_proxies(self):
         """Fetch fresh proxy list from multiple sources (fallback only)."""
         all_proxies = []
-        
+
         sources = [
             "https://spys.me/proxy.txt",
         ]
-        
+
         for source in sources:
             try:
                 response = requests.get(source, timeout=10)
@@ -119,15 +123,15 @@ class ProxyManager:
                                     all_proxies.append(proxy)
             except Exception as e:
                 logging.debug(f"Failed to fetch proxies from {source}: {e}")
-        
+
         self._proxies = list(set(all_proxies))
         random.shuffle(self._proxies)
         self._current_index = 0
         self._last_fetch = time.time()
-        
+
         logging.info(f"Loaded {len(self._proxies)} fallback proxies")
         return len(self._proxies)
-    
+
     def get_proxy(self):
         """Get next proxy - prefers Oxylabs, falls back to free proxies."""
         # First try Oxylabs
@@ -135,26 +139,26 @@ class ProxyManager:
             proxy = self.get_oxylabs_proxy()
             if proxy:
                 return proxy
-        
+
         # Fallback to free proxies
         # Refresh if needed
         if time.time() - self._last_fetch > self._fetch_interval or not self._proxies:
             self.fetch_proxies()
-        
+
         if not self._proxies:
             return None
-        
+
         proxy = self._proxies[self._current_index % len(self._proxies)]
         self._current_index += 1
         return proxy
-    
+
     def mark_failed(self, proxy):
         """Mark a proxy as failed."""
         if proxy:
             self._failed_proxies.add(proxy)
             if proxy in self._proxies:
                 self._proxies.remove(proxy)
-    
+
     def reset(self):
         """Reset failed proxies list."""
         self._failed_proxies.clear()
@@ -221,7 +225,7 @@ def fetch_proxy_list():
 def fetch_page(url, proxy=None, retry_count=0, use_oxylabs=True):
     """
     Fetch a single page from Google Scholar with retry logic and Oxylabs proxy.
-    
+
     Args:
         url: URL to fetch
         proxy: Specific proxy to use (or None for Oxylabs)
@@ -237,7 +241,7 @@ def fetch_page(url, proxy=None, retry_count=0, use_oxylabs=True):
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
     }
-    
+
     # Get proxy - prefer Oxylabs, fall back to provided or rotation
     current_proxy = proxy
     if current_proxy is None and use_oxylabs:
@@ -246,60 +250,63 @@ def fetch_page(url, proxy=None, retry_count=0, use_oxylabs=True):
             logging.debug(f"  Using Oxylabs proxy (country rotation)")
         elif current_proxy:
             logging.debug(f"  Using fallback proxy: {current_proxy[:30]}...")
-    
-    proxies = {"http": current_proxy, "https": current_proxy} if current_proxy else None
-    
+
+    proxies = {"http": current_proxy,
+               "https": current_proxy} if current_proxy else None
+
     try:
         response = requests.get(url, headers=headers,
                                 proxies=proxies, timeout=20)
         response.raise_for_status()
-        logging.info(f"Fetched URL successfully (Status: {response.status_code})")
+        logging.info(
+            f"Fetched URL successfully (Status: {response.status_code})")
         return response.text
-        
+
     except requests.exceptions.HTTPError as e:
         status_code = getattr(response, 'status_code', None)
-        
+
         if status_code == 429:
             # Rate limited - wait and try with different country
-            logging.warning(f"Rate limited (429). Waiting {RETRY_DELAY}s and switching proxy country...")
-            
+            logging.warning(
+                f"Rate limited (429). Waiting {RETRY_DELAY}s and switching proxy country...")
+
             if retry_count < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
                 new_proxy = proxy_manager.get_proxy()  # Gets new country
-                return fetch_page(url, proxy=new_proxy, retry_count=retry_count + 1, 
-                                use_oxylabs=use_oxylabs)
+                return fetch_page(url, proxy=new_proxy, retry_count=retry_count + 1,
+                                  use_oxylabs=use_oxylabs)
             else:
                 logging.error(f"Max retries exceeded for {url}")
                 return None
         else:
             logging.error(f"HTTP Error {status_code} fetching {url}: {e}")
             return None
-            
+
     except requests.exceptions.ProxyError as e:
         logging.warning(f"Proxy error: {e}")
-        
+
         if retry_count < MAX_RETRIES:
             time.sleep(2)
             new_proxy = proxy_manager.get_proxy()
             return fetch_page(url, proxy=new_proxy, retry_count=retry_count + 1,
-                            use_oxylabs=use_oxylabs)
+                              use_oxylabs=use_oxylabs)
         return None
-        
+
     except requests.exceptions.Timeout as e:
         logging.warning(f"Timeout: {e}")
-            
+
         if retry_count < MAX_RETRIES:
             time.sleep(2)
             return fetch_page(url, proxy=None, retry_count=retry_count + 1,
-                            use_oxylabs=use_oxylabs)
+                              use_oxylabs=use_oxylabs)
         return None
-        
+
     except Exception as e:
         logging.error(f"Error fetching {url}: {e}")
         if retry_count < MAX_RETRIES:
             time.sleep(RETRY_DELAY)
             return fetch_page(url, proxy=None, retry_count=retry_count + 1,
-                            use_oxylabs=use_oxylabs)
+                              use_oxylabs=use_oxylabs)
         return None
 
 
@@ -315,7 +322,7 @@ def search_google_scholar(query, pages=3, proxy=None, save_json_path=None, year_
     - use_oxylabs: (optional) whether to use Oxylabs proxy. Defaults to True.
 
     Returns a list of dictionaries with keys: title, link, citation, publication_info.
-    
+
     Note: Set PROXY_USER_NAME and PROXY_PASS environment variables for Oxylabs.
     """
     encoded_query = quote(query)
@@ -323,53 +330,57 @@ def search_google_scholar(query, pages=3, proxy=None, save_json_path=None, year_
     all_results = []
     consecutive_failures = 0
     max_consecutive_failures = 3
-    
+
     # Build year filter
     year_param = f"&as_ylo={year_from}" if year_from else ""
-    
+
     logging.info(f"Starting Google Scholar search: '{query}' ({pages} pages)")
-    
+
     # Check Oxylabs configuration
     if use_oxylabs and not proxy:
         test_proxy = get_oxylabs_proxy()
         if test_proxy:
             logging.info("Using Oxylabs proxy with country rotation")
         else:
-            logging.warning("Oxylabs credentials not found. Set PROXY_USER_NAME and PROXY_PASS env vars.")
-            logging.warning("Falling back to direct connection (may get rate limited)")
+            logging.warning(
+                "Oxylabs credentials not found. Set PROXY_USER_NAME and PROXY_PASS env vars.")
+            logging.warning(
+                "Falling back to direct connection (may get rate limited)")
 
     # Fetch pages SEQUENTIALLY with delays to avoid rate limiting
     for page in range(pages):
         start = page * 10
         url = f"{base_url}?start={start}&q={encoded_query}{year_param}&hl=en&as_sdt=0,5"
-        
+
         logging.info(f"Fetching page {page + 1}/{pages}...")
-        
+
         html = fetch_page(url, proxy, use_oxylabs=use_oxylabs)
-        
+
         if html:
             try:
                 results = parse_html(html)
                 all_results.extend(results)
-                logging.info(f"  Found {len(results)} results on page {page + 1}")
+                logging.info(
+                    f"  Found {len(results)} results on page {page + 1}")
                 consecutive_failures = 0  # Reset on success
             except Exception as e:
                 logging.error(f"Error parsing HTML from {url}: {e}")
         else:
             logging.warning(f"  Failed to fetch page {page + 1}")
             consecutive_failures += 1
-            
+
             # If we get rate limited repeatedly, back off longer
             if consecutive_failures >= max_consecutive_failures:
                 logging.warning(f"  Too many failures. Stopping search early.")
                 break
-            
+
             if page < pages - 1:
                 # Exponential backoff on failures
                 backoff_time = RETRY_DELAY * (consecutive_failures + 1)
-                logging.info(f"  Backing off for {backoff_time:.1f}s before next request...")
+                logging.info(
+                    f"  Backing off for {backoff_time:.1f}s before next request...")
                 time.sleep(backoff_time)
-        
+
         # Add 5-second delay between pages to avoid rate limiting
         if page < pages - 1 and html:
             delay = random.uniform(MIN_DELAY, MAX_DELAY)
@@ -379,7 +390,7 @@ def search_google_scholar(query, pages=3, proxy=None, save_json_path=None, year_
     # Sort the results by citation count (descending)
     all_results.sort(key=lambda x: int(
         x["citation"]) if x["citation"].isdigit() else 0, reverse=True)
-    
+
     logging.info(f"Search complete. Total results: {len(all_results)}")
 
     # Save results as JSON if a file path is provided

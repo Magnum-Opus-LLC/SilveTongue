@@ -14,7 +14,7 @@ The Cognitive Loop Manifesto:
 from src.utils import KnowledgeBase, kb, get_chat_completion, researcher
 from src.thoughts import SilvertongueConscious, SilvertongueSubconscious
 from src.actions import (
-    ThoughtProcessor, 
+    ThoughtProcessor,
     LearningScheduleRunner,
     CognitiveLoop,
     CognitiveState,
@@ -33,12 +33,12 @@ __all__ = [
     'kb',
     'get_chat_completion',
     'researcher',
-    
+
     # Cognitive Components
     'SilvertongueConscious',
     'SilvertongueSubconscious',
     'ThoughtProcessor',
-    
+
     # Cognitive Loop (The Manifesto)
     'CognitiveLoop',
     'CognitiveState',
@@ -48,10 +48,10 @@ __all__ = [
     'run_forever',
     'start_learning',
     'resume_learning',
-    
+
     # Learning System
     'LearningScheduleRunner',
-    
+
     # Scholar Search
     'ScholarSearcher',
     'scholar_searcher',

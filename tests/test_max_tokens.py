@@ -31,23 +31,23 @@ for scenario in scenarios:
     words = scenario["words"]
     chars = words * 5  # ~5 chars per word
     tokens = estimate_tokens("x" * chars)
-    
+
     print(f"\n   {scenario['name']}:")
     print(f"   - Content: {tokens:,} tokens")
-    
+
     # Calculate how many chunks needed
     overhead = 2000  # prompt + response
     available = context_window - overhead
     chunks_needed = (tokens // available) + 1
-    
+
     print(f"   - Chunks needed: {chunks_needed}")
     print(f"   - Tokens per chunk: {available:,}")
-    
+
     # Calculate synthesis limit
     synthesis_budget = context_window - 4000  # Reserve 4K for prompt/response
     bits_per_token = 150
     max_bits = synthesis_budget // bits_per_token
-    
+
     print(f"   - Max knowledge bits in synthesis: {max_bits}")
 
 # 3. Safe chunk size calculation
@@ -65,7 +65,7 @@ for ctx in contexts:
     safe_tokens = get_safe_chunk_size(context_size=ctx["size"], overhead=2000)
     safe_chars = safe_tokens * 4
     safe_words = safe_tokens * 0.75
-    
+
     print(f"\n   {ctx['desc']} ({ctx['size']} tokens):")
     print(f"   - Safe chunk: {safe_tokens:,} tokens")
     print(f"   - In characters: ~{safe_chars:,.0f}")
@@ -125,7 +125,8 @@ bits_budget = (context_window - 4000) // 150
 print(f"   Synthesis analysis:")
 print(f"   - Max bits for synthesis: {bits_budget}")
 print(f"   - Actual bits extracted: {lora_stats['knowledge_bits']}")
-print(f"   - Fits in synthesis? {'✅ YES' if lora_stats['knowledge_bits'] <= bits_budget else '❌ NO'}")
+print(
+    f"   - Fits in synthesis? {'✅ YES' if lora_stats['knowledge_bits'] <= bits_budget else '❌ NO'}")
 print(f"   - Would use: {min(bits_budget, lora_stats['knowledge_bits'])} bits")
 
 # 6. Recommendations

@@ -74,7 +74,7 @@ def api_actor_sleep_status(actor_name):
 
         # Find dataset files
         dataset_files = list(lora_dir.glob('*.jsonl'))
-        summary_files = list(lora_dir.glob('*.summary.json'))
+        # summary_files = list(lora_dir.glob('*.summary.json'))
 
         result = {
             'has_data': len(dataset_files) > 0,

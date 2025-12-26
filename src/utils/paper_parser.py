@@ -20,18 +20,18 @@ except ImportError:
 
 class PaperParser:
     """Parse papers from various formats into structured text."""
-    
+
     SUPPORTED_EXTENSIONS = {'.txt', '.md', '.pdf'}
-    
+
     def __init__(self):
         self.supported = self.SUPPORTED_EXTENSIONS.copy()
         if not HAS_PDF_SUPPORT:
             self.supported.discard('.pdf')
-    
+
     def parse_file(self, file_path: Path) -> Dict:
         """
         Parse a single file and return structured content.
-        
+
         Returns:
             {
                 "file_path": str,
@@ -49,27 +49,28 @@ class PaperParser:
             }
         """
         file_path = Path(file_path)
-        
+
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
-        
+
         ext = file_path.suffix.lower()
-        
+
         if ext not in self.supported:
-            raise ValueError(f"Unsupported file type: {ext}. Supported: {self.supported}")
-        
+            raise ValueError(
+                f"Unsupported file type: {ext}. Supported: {self.supported}")
+
         if ext == '.pdf':
             return self._parse_pdf(file_path)
         elif ext in {'.txt', '.md'}:
             return self._parse_text(file_path)
-    
+
     def _parse_text(self, file_path: Path) -> Dict:
         """Parse plain text or markdown files."""
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
-        
+
         chunks = self._chunk_text(content)
-        
+
         return {
             "file_path": str(file_path),
             "file_name": file_path.name,
@@ -84,16 +85,17 @@ class PaperParser:
                 "page_count": 1
             }
         }
-    
+
     def _parse_pdf(self, file_path: Path) -> Dict:
         """Parse PDF files using PyMuPDF."""
         if not HAS_PDF_SUPPORT:
-            raise ImportError("PDF support requires PyMuPDF. Install with: pip install pymupdf")
-        
+            raise ImportError(
+                "PDF support requires PyMuPDF. Install with: pip install pymupdf")
+
         doc = fitz.open(file_path)
         pages = []
         full_text = []
-        
+
         for page_num, page in enumerate(doc):
             text = page.get_text()
             pages.append({
@@ -101,12 +103,12 @@ class PaperParser:
                 "text": text
             })
             full_text.append(text)
-        
+
         content = "\n\n".join(full_text)
         chunks = self._chunk_text(content)
-        
+
         doc.close()
-        
+
         return {
             "file_path": str(file_path),
             "file_name": file_path.name,
@@ -122,12 +124,12 @@ class PaperParser:
                 "page_count": len(pages)
             }
         }
-    
+
     def _chunk_text(self, text: str, chunk_size: int = None, overlap: int = 200) -> List[str]:
         """
         Split text into overlapping chunks suitable for LLM processing.
         Automatically adapts to model's context window if chunk_size not specified.
-        
+
         Args:
             text: Full text content
             chunk_size: Target size of each chunk in characters (auto-calculated if None)
@@ -138,22 +140,24 @@ class PaperParser:
             try:
                 from src.utils.chat_utils import get_safe_chunk_size
                 # Get safe chunk size in tokens, convert to characters
-                safe_tokens = get_safe_chunk_size(context_size=500, overhead=2000)
-                chunk_size = safe_tokens * 4  # tokens to chars (rough estimate)
+                safe_tokens = get_safe_chunk_size(
+                    context_size=500, overhead=2000)
+                # tokens to chars (rough estimate)
+                chunk_size = safe_tokens * 4
                 # Cap at reasonable max to avoid memory issues
                 chunk_size = min(chunk_size, 500000)  # 500K chars max
             except:
                 chunk_size = 4000  # Fallback to old default
-        
+
         if len(text) <= chunk_size:
             return [text]
-        
+
         chunks = []
         start = 0
-        
+
         while start < len(text):
             end = start + chunk_size
-            
+
             # Try to break at paragraph or sentence boundary
             if end < len(text):
                 # Look for paragraph break
@@ -163,40 +167,41 @@ class PaperParser:
                 else:
                     # Look for sentence break
                     for punct in ['. ', '! ', '? ', '.\n']:
-                        sent_break = text.rfind(punct, start + chunk_size // 2, end)
+                        sent_break = text.rfind(
+                            punct, start + chunk_size // 2, end)
                         if sent_break > 0:
                             end = sent_break + len(punct)
                             break
-            
+
             chunks.append(text[start:end].strip())
             start = end - overlap
-        
+
         return chunks
-    
-    def scan_directory(self, directory: Path, file_types: List[str] = None, 
+
+    def scan_directory(self, directory: Path, file_types: List[str] = None,
                        recursive: bool = True) -> List[Path]:
         """
         Scan a directory for parseable files.
-        
+
         Args:
             directory: Directory to scan
             file_types: List of extensions to include (e.g., ['.pdf', '.txt'])
             recursive: Whether to scan subdirectories
         """
         directory = Path(directory)
-        
+
         if not directory.exists():
             raise FileNotFoundError(f"Directory not found: {directory}")
-        
+
         if file_types is None:
             file_types = list(self.supported)
-        
+
         # Normalize extensions
-        file_types = [ext.lower() if ext.startswith('.') else f'.{ext.lower()}' 
+        file_types = [ext.lower() if ext.startswith('.') else f'.{ext.lower()}'
                       for ext in file_types]
-        
+
         files = []
-        
+
         if recursive:
             for root, dirs, filenames in os.walk(directory):
                 for filename in filenames:
@@ -206,7 +211,7 @@ class PaperParser:
             for item in directory.iterdir():
                 if item.is_file() and item.suffix.lower() in file_types:
                     files.append(item)
-        
+
         return sorted(files)
 
 

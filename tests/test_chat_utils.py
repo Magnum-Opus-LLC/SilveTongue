@@ -1,3 +1,4 @@
+from utils.chat_utils import get_chat_completion, load_config
 import unittest
 from unittest.mock import patch, MagicMock
 import sys
@@ -6,8 +7,6 @@ from pathlib import Path
 
 # Add src to python path
 sys.path.append(str(Path(__file__).parent.parent / 'src'))
-
-from utils.chat_utils import get_chat_completion, load_config
 
 
 class TestChatUtils(unittest.TestCase):

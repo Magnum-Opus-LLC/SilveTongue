@@ -13,6 +13,11 @@ Use legacy app.py:
 """
 
 # Setup sys.path FIRST before any other imports
+from app import app
+import time
+import threading
+import webbrowser
+import argparse
 import sys
 from pathlib import Path
 
@@ -24,13 +29,8 @@ project_root = dashboard_root.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(1, str(dashboard_root))
 
-import argparse
-import webbrowser
-import threading
-import time
 
 # Now import app
-from app import app
 
 
 def open_browser(port):

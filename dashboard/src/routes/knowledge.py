@@ -42,11 +42,11 @@ def api_add_knowledge(actor_name, knowledge_type):
         data = request.json or {}
     else:
         data = request.form.to_dict() if request.form else {}
-    
+
     content = data.get('content', '')
     if not content:
         return jsonify({'success': False, 'error': 'No content provided'}), 400
-    
+
     source = data.get('source', 'dashboard')
 
     try:
