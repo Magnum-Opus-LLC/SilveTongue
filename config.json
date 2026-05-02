@@ -1,13 +1,13 @@
 {
-    "apiHost": "http://192.168.1.201:8355",
+    "apiHost": "http://${SERVER_HOST}:8355",
     "apiKey": "EMPTY",
     "model": "qwen2_5",
     "max_tokens": 32768,
     "max_concurrent_requests": 4,
-    "array_dir": "/Users/ruihe/mnt/silvertongueArray/array",
-    "lora_adapters_dir": "/Users/ruihe/mnt/silvertongueArray/lora_adapters",
+    "array_dir": "${SILVERTONGUE_ARRAY_DIR}/array",
+    "lora_adapters_dir": "${SILVERTONGUE_ARRAY_DIR}/lora_adapters",
     "trainer_server": {
-        "host": "192.168.1.201",
+        "host": "${SERVER_HOST}",
         "port": 5050,
         "enabled": true
     }

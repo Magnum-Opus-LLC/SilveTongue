@@ -1,4 +1,3 @@
-# filepath: /Users/ruihe/mnt/silvertongueArray/silvertongue/dashboard/src/pdf_book.py
 """
 PDF Book - Central Database for PDF Management in Silvertongue.
 

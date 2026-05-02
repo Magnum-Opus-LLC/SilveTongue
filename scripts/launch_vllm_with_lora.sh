@@ -6,7 +6,7 @@
 # See: https://huggingface.co/meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8
 export MODEL_HANDLE="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8"
 export LORA_ADAPTERS_PATH="/mnt/silvertongueArray/lora_adapters"
-export LOG_DIR="/home/rhmaomao/myServer/llm_services/vllm/log"
+export LOG_DIR="${LOG_BASE:-/var/log/llm_services}/vllm/log"
 
 # Create log directory if it doesn't exist
 mkdir -p "$LOG_DIR"

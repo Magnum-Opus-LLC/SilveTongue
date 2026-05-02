@@ -3,7 +3,7 @@
 # NVIDIA Nemotron 3 Nano 30B with LoRA support
 export MODEL_HANDLE="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8"
 export LORA_ADAPTERS_PATH="/mnt/nas/silvertongue/lora_adapters"
-export LOG_DIR="/home/rhmaomao/myServer/llm_services/vllm/log"
+export LOG_DIR="${LOG_BASE:-/var/log/llm_services}/vllm/log"
 
 # Create log directory if it doesn't exist
 mkdir -p "$LOG_DIR"

@@ -2047,16 +2047,16 @@ def translate_path_for_server(local_path: str) -> str:
       DATASET_DIR=/mnt/silvertongueArray/array/data
 
     Mac paths need to be translated:
-      /Users/ruihe/mnt/silvertongueArray/array/data/... -> /datasets/...
-      /Users/ruihe/mnt/silvertongueArray/lora_adapters/... -> /lora_adapters/...
+      /mnt/silvertongueArray/array/data/... -> /datasets/...
+      /mnt/silvertongueArray/lora_adapters/... -> /lora_adapters/...
     """
     # Get the local array_dir from config
     config = load_config()
     local_array_dir = config.get('array_dir', '')
 
     # Mac mount points
-    mac_array_mount = '/Users/ruihe/mnt/silvertongueArray/array'
-    mac_lora_mount = '/Users/ruihe/mnt/silvertongueArray/lora_adapters'
+    mac_array_mount = '/mnt/silvertongueArray/array'
+    mac_lora_mount = '/mnt/silvertongueArray/lora_adapters'
 
     # DGX host paths
     dgx_array_mount = '/mnt/silvertongueArray/array'
@@ -2070,7 +2070,7 @@ def translate_path_for_server(local_path: str) -> str:
 
     # Handle LoRA adapter paths FIRST (more specific)
     if local_path.startswith(mac_lora_mount):
-        # Mac: /Users/ruihe/mnt/silvertongueArray/lora_adapters/steve/v1
+        # Mac: /mnt/silvertongueArray/lora_adapters/steve/v1
         # Docker: /lora_adapters/steve/v1
         server_path = local_path.replace(mac_lora_mount, docker_lora_dir)
         return server_path

@@ -1,9 +1,9 @@
 #!/bin/bash
 
 export BASE_MODEL="Qwen/Qwen2.5-VL-7B-Instruct-AWQ"   # quantized Qwen VL
-export HOST_MODEL_ROOT="/home/rhmaomao/myServer/llm_models"
+export HOST_MODEL_ROOT="${HOST_MODEL_ROOT:-/data/llm_models}"
 export HOST_LORA_ROOT="/mnt/silvertongueArray/lora_adapters"
-export LOG_DIR="/home/rhmaomao/myServer/llm_services/nvcr_hosting/qwen2.5vl-vllm/log"
+export LOG_DIR="${LOG_BASE:-/var/log/llm_services}/nvcr_hosting/qwen2.5vl-vllm/log"
 export PORT=8355
 
 # Ensure directories exist

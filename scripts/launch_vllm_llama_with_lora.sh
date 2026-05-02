@@ -3,7 +3,7 @@
 # Use Llama 3.1 8B which HAS LoRA support
 export MODEL_HANDLE="meta-llama/Llama-3.1-8B-Instruct"
 export LORA_ADAPTERS_PATH="/mnt/silvertongueArray/lora_adapters"
-export LOG_DIR="/home/rhmaomao/myServer/llm_services/vllm/log"
+export LOG_DIR="${LOG_BASE:-/var/log/llm_services}/vllm/log"
 
 # Create log directory if it doesn't exist
 mkdir -p "$LOG_DIR"

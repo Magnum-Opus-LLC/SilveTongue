@@ -1,4 +1,3 @@
-# filepath: /Users/ruihe/mnt/silvertongueArray/silvertongue/dashboard/src/routes/chat.py
 """
 Chat routes for the Silvertongue Dashboard.
 

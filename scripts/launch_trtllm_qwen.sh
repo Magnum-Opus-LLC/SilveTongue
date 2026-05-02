@@ -3,9 +3,9 @@
 # Use this for cognitive loops and learning tasks
 
 export MODEL_NAME="Qwen/Qwen2.5-7B-Instruct"
-export HOST_MODEL_ROOT="/home/rhmaomao/myServer/llm_models"
+export HOST_MODEL_ROOT="${HOST_MODEL_ROOT:-/data/llm_models}"
 export HOST_LORA_ROOT="/mnt/silvertongueArray/lora_adapters"
-export LOG_DIR="/home/rhmaomao/myServer/llm_services/trtllm/log"
+export LOG_DIR="${LOG_BASE:-/var/log/llm_services}/trtllm/log"
 export PORT=8355
 
 mkdir -p "$LOG_DIR"
